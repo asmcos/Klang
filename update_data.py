@@ -5,4 +5,4 @@ from Klang.Klang import (
 Kl = Klang()
 
 Kl.downloadall()
-
+Kl.updateall()
