@@ -7,6 +7,8 @@ Klang 是Kline语言,即股票语言,支持方便快捷的股票编程,可以轻
 
 Klang 最大的亮点是支持中文编程,可以看最后的完整例子
 
+最新仓库 已经转移到 https://github.com/KlangAlpha/Klang
+
 任何问题欢迎访问[问答社区](https://forum.klang.org.cn)
 
 # 在线试用
