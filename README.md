@@ -53,7 +53,7 @@ Klang 最大的亮点是支持中文编程,可以看最后的完整例子
 
 # 安装
 ```
-git clone https://github.com/KlangAlpha/Klang
+git clone https://github.com/asmcos/Klang.git
 cd Klang
 pip3 install -r requirements.txt 
 python3 setup.py install
@@ -274,6 +274,8 @@ python3 setup install
 ```
 
 # 更新
+* 2026.11.24 数据层重构：import 不再联网，只读本地缓存；数据下载改用 eltdx（通达信）；
+  新增 tools/limit_up.py 涨停扫描与 SKILL.md（AI 助手使用指南）
 * 2022.10.19 server 换成socket.io通讯协议
 * 2022.10.17 全面采取了分片执行，真正实现了多服务器并行工作
 * 2021.12.1 增加了特征提取公式
