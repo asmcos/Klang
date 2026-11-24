@@ -6,6 +6,14 @@ agent_created: true
 
 # Klang 量化分析
 
+> **本文件有两处相同副本**：仓库根目录 `SKILL.md`（方便直接查看/复制）与 `.workbuddy/skills/klang-quant/SKILL.md`（WorkBuddy 打开本仓库时会自动发现）。修改任一处请同步另一处。
+>
+> 安装到自己的 WorkBuddy：
+> ```bash
+> mkdir -p ~/.workbuddy/skills/klang-quant
+> cp SKILL.md ~/.workbuddy/skills/klang-quant/SKILL.md
+> ```
+
 ## 概述
 
 Klang 是股票 K 线编程语言，特点是**中文写公式**（`今日收盘 = C`、`涨幅 > 9.8`）和**整序列运算**（`C[1]` 表示上一根 K 线，`C/C[1]` 直接得到涨跌幅序列）。

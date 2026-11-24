@@ -64,7 +64,7 @@ python3 setup.py install
 * 数据更新通过 eltdx（通达信行情）下载，需先安装：`pip3 install eltdx`
 
 ```
-# 增量更新日K
+# 只更新日K（日常使用）
 python3 tools/eltdx_updater.py
 
 # 全量下载日/周/月K线
@@ -72,6 +72,27 @@ python3 tools/eltdx_updater.py --all
 
 # 只更新指定股票
 python3 tools/eltdx_updater.py --codes sh.600000 sz.000001
+```
+
+# 在 AI 助手（WorkBuddy 等）中使用
+
+仓库自带一份 [SKILL.md](SKILL.md)，把 Klang 的安装、数据下载、Python API、中文公式写法、
+网页服务模式和踩过的坑都写清楚了。AI 助手读到这个文件就会知道怎么用 Klang。
+
+```bash
+# 安装到自己的 WorkBuddy
+mkdir -p ~/.workbuddy/skills/klang-quant
+cp SKILL.md ~/.workbuddy/skills/klang-quant/SKILL.md
+```
+
+装好之后可以直接对助手说「用 Klang 找今天涨停的股票」「用 Klang 算一下 XX 的均线」。
+
+现成的选股脚本：
+
+```bash
+python3 tools/limit_up.py            # 今日涨停
+python3 tools/limit_up.py --down     # 今日跌停
+python3 tools/limit_up.py --broken   # 炸板（盘中触及涨停未封住）
 ```
 
 
