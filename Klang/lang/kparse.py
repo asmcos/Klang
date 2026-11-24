@@ -19,6 +19,7 @@ def p_function(p):
     '''
     function : function statement SEMI
              | function line_statement
+             | function statement_assign 
              | function kloop
              | empty
     '''
@@ -44,7 +45,7 @@ def p_func_block(p):
     else:
         debug('FUNCTION', p[1:])
 
-#讲循环里面的语句块 加入到loop里面
+#将循环里面的语句块 加入到loop里面
 def p_kloop(p):
     '''
     kloop : KLOOP SEMI func_block  ENDP %prec LOOP_INSTR
@@ -52,6 +53,12 @@ def p_kloop(p):
     global blockList
     p[0] = mAST(action='kloop',params=copy.copy(blockList))
     blockList = []
+
+def p_kstop(p):
+    '''
+    statement_func : KSTOP
+    '''
+    p[0] = mAST(action='kstop',params=p[1:])
 
 def p_statement_none(p):
     'line_statement : SEMI'
@@ -134,14 +141,13 @@ def p_statement_cond_postfix_assign(p):
         p[1][0], mAST(action='condition', params=[p[3], p[1][1], p[5]])
     ])
 
-
 def p_statement_cond(p):
     '''
-    line_statement : IF condition_list COLON statement SEMI %prec IFX
+    line_statement : IF condition_list COLON SEMI statement_assign SEMI %prec IFX
+                   | IF condition_list COLON statement SEMI %prec IFX
                    | IF condition_list COLON SEMI statement SEMI %prec IFX
                    | IF condition_list COLON SEMI statement_func SEMI %prec IFX
                    | IF condition_list COLON statement_func SEMI %prec IFX
-                   | IF condition_list COLON SEMI ID ASSIGN condition_list SEMI %prec IFX
     '''
     debug("IF", [str(x) for x in p[1:]])
     if len(p) < 7:
@@ -176,6 +182,16 @@ def p_statement_assign(p):
     '''
     debug('ASSIGN', p[1], p[3])
     p[0] = mAST(action='assign', params=[p[1], p[3]])
+
+
+def p_statement_assign1(p):
+    '''
+    statement_assign : ID ASSIGN condition_list 
+    '''
+    debug('ASSIGN', p[1], p[3])
+    p[0] = mAST(action='assign', params=[p[1], p[3]])
+
+
 
 def p_expression_list(p):
     '''
@@ -317,13 +333,19 @@ def debug(*params):
 
 
 #parsetab.py -->outputdir
-
-kparser = yacc.yacc(debug=False,outputdir="/tmp")
+import os
+userpath = os.path.expanduser("~/")
+outdir = os.path.normpath(userpath)
+print(outdir)
+kparser = yacc.yacc(debug=False,outputdir=outdir)
 
 def Kexec(datas):
     result = kparser.parse(datas)
     for x in result:
         if x is not None:
-            x.run()
+            ret = x.run()
+             
+            if ret == "KSTOP":
+                return 
 
 

@@ -1,5 +1,12 @@
+import sys
+from pathlib import Path # if you haven't already done so
+root = Path(__file__).resolve().parents[1]
+sys.path.insert(0,str(root))
+
+
 from Klang import (
     C,O,Klang,
+    MC,WC,MO,WO,T,WT,MT,
     REF,REFDATE,
     MA,
     SMA,
@@ -20,7 +27,7 @@ date = Kl.date
 code('sh.601012')
 print(C)
 
-print(Kl.currentdf['df'])
+print(Kl.day_df)
 
 # 设置为茅台
 code('sh.600519')
@@ -57,4 +64,4 @@ print(EVERY(C<O,2))
 print(ABS(C-O))
 
 print(EXIST(C<O,10))
-
+print(WC,MC,T,MT[-2],WT[-2])

@@ -25,9 +25,11 @@ df2 = df[(df.date >= '2020-10-01') &
 #
 
 def getstockdata(name):
-    if isinstance(kl.currentdf.get('df'),pandas.core.frame.DataFrame):
-        return kl.currentdf['df'][name]
-    return []
+    if isinstance(kl.day_df,pandas.core.frame.DataFrame):
+        return kl.day_df[name]
+    kl.get_day()
+
+    return kl.day_df[name]
         
 #做类似C/C[1]计算
 #计算涨跌率
@@ -44,9 +46,9 @@ def match_size(*datas_list):
 #股票数据重新定义以方便计算
 
 class KdataBase(object):
-    def __init__(self,index=0,data=[]):
+    def __init__(self,index=0,data=[],dtype=float):
         self._data = data
-        self.dtype = float
+        self.dtype = dtype
         self.index = index
 
     #返回最后一天的数据
@@ -55,6 +57,7 @@ class KdataBase(object):
         ret = self.data[-1]
         if self.dtype == float:
             return round(ret,3)
+        return ret
 
     def __bool__(self):
         return bool(self.data[-1])
@@ -70,6 +73,11 @@ class KdataBase(object):
         #Klang Don't None 类型，因此处理判断位None
         if index is None:
             return None
+        if isinstance(index,str):
+            try:
+                return self.data[index]
+            except:
+                return None
 
         if index < 0:
             index = -(index + 1)
@@ -87,7 +95,13 @@ class KdataBase(object):
             kb = KdataBase()
             d1,d2 = match_size(self.data,other.data)
             kb._data = d1 < d2
+            kb.dtype = bool
             return kb
+        if isinstance(other,float) or isinstance(other,int):
+            kb = KdataBase()
+            kb._data = self.data < other
+            kb.dtype = bool
+            return kb     
         else: #int float
             return self.value < other
 
@@ -98,7 +112,13 @@ class KdataBase(object):
             kb = KdataBase()
             d1,d2 = match_size(self.data,other.data)
             kb._data = d1 > d2
+            kb.dtype = bool
             return kb
+        if isinstance(other,float) or isinstance(other,int):
+            kb = KdataBase()
+            kb._data = self.data > other
+            kb.dtype = bool
+            return kb             
         else: #int float
             return self.value > other
 
@@ -109,7 +129,13 @@ class KdataBase(object):
             kb = KdataBase()
             d1,d2 = match_size(self.data,other.data)
             kb._data = d1 == d2
+            kb.dtype = bool
             return kb
+        if isinstance(other,float) or isinstance(other,int):
+            kb = KdataBase()
+            kb._data = self.data == other
+            kb.dtype = bool
+            return kb             
         else: #int float
             return self.value == other
 
@@ -120,7 +146,13 @@ class KdataBase(object):
             kb = KdataBase()
             d1,d2 = match_size(self.data,other.data)
             kb._data = d1 != d2
+            kb.dtype = bool
             return kb
+        if isinstance(other,float) or isinstance(other,int):
+            kb = KdataBase()
+            kb._data = self.data != other
+            kb.dtype = bool
+            return kb             
         else: #int float
             return self.value != other
 
@@ -131,7 +163,13 @@ class KdataBase(object):
             kb = KdataBase()
             d1,d2 = match_size(self.data,other.data)
             kb._data = d1 >= d2
+            kb.dtype = bool
             return kb
+        if isinstance(other,float) or isinstance(other,int):
+            kb = KdataBase()
+            kb._data = self.data >= other
+            kb.dtype = bool
+            return kb 
         else: #int float
             return self.value >= other
 
@@ -142,7 +180,13 @@ class KdataBase(object):
             kb = KdataBase()
             d1,d2 = match_size(self.data,other.data)
             kb._data = d1 <= d2
+            kb.dtype = bool
             return kb
+        if isinstance(other,float) or isinstance(other,int):
+            kb = KdataBase()
+            kb._data = self.data <= other
+            kb.dtype = bool
+            return kb             
         else: #int float
             return self.value <= other
 
@@ -153,6 +197,10 @@ class KdataBase(object):
             d1,d2 = match_size(self.data,other.data)
             kb._data = d1 + d2
             return kb
+        if isinstance(other,float) or isinstance(other,int):
+            kb = KdataBase()
+            kb._data = self.data + other
+            return kb             
         else: #int float
             return self.value + other
     # -
@@ -162,6 +210,10 @@ class KdataBase(object):
             d1,d2 = match_size(self.data,other.data)
             kb._data = d1 - d2
             return kb
+        if isinstance(other,float) or isinstance(other,int):
+            kb = KdataBase()
+            kb._data = self.data - other
+            return kb 
         else: #int float
             return self.value - other
     # -
@@ -171,6 +223,10 @@ class KdataBase(object):
             d1,d2 = match_size(self.data,other.data)
             kb._data = d2 - d1
             return kb
+        if isinstance(other,float) or isinstance(other,int):
+            kb = KdataBase()
+            kb._data = self.data - other
+            return kb             
         else: #int float
             return other - self.value
 
@@ -181,6 +237,10 @@ class KdataBase(object):
             d1,d2 = match_size(self.data,other.data)
             kb._data = d1 * d2
             return kb
+        if isinstance(other,float) or isinstance(other,int):
+            kb = KdataBase()
+            kb._data = self.data * other
+            return kb             
         else: #int float
             return round(self.value * other,3)
 
@@ -192,6 +252,10 @@ class KdataBase(object):
             d1,d2 = match_size(self.data,other.data)
             kb._data = d1 / d2
             return kb
+        if isinstance(other,float) or isinstance(other,int):
+            kb = KdataBase()
+            kb._data = self.data / other
+            return kb             
         else:
             return round(self.value / other,3)
 
@@ -202,6 +266,10 @@ class KdataBase(object):
             d1,d2 = match_size(self.data,other.data)
             kb._data = d2 / d1
             return kb
+        if isinstance(other,float) or isinstance(other,int):
+            kb = KdataBase()
+            kb._data = self.data / other
+            return kb             
         else:
             return round(other / self.value,3)
 
@@ -218,11 +286,11 @@ class KdataBase(object):
 
 class Kdatas(KdataBase):
     def __init__(self,index=0):
-        self._data = []
-        self.currentindex = -1 #stock code index
+        self._data        = []
+        self.cur_code     = "00000" # 股票代码
         self.dfstart      = -1 #stock start date
         self.dfend        = -1 #stock end date
-        self.index = index     #C,C[1],C[2]
+        self.index        = index     #C,C[1],C[2]
     
      #返回最后一天的数据
     @property
@@ -231,17 +299,17 @@ class Kdatas(KdataBase):
             return None
         return self.dtype(self.data[-1])
 
-    #比较currentindex值的目的是切换股票的时候刷新
+    #比较code 值的目的是切换股票的时候刷新
     @property
     def data(self):
-        if len(self._data) == 0 or self.currentindex != kl.currentindex\
+        if len(self._data) == 0 or self.cur_code != kl.cur_code\
             or self.dfstart != kl.dfstart\
             or self.dfend   != kl.dfend:
 
             #reload
-            self.currentindex = kl.currentindex
-            self.dfstart = kl.dfstart
-            self.dfend   = kl.dfend
+            self.dfstart  = kl.dfstart
+            self.dfend    = kl.dfend
+            self.cur_code = kl.cur_code
 
             d = getstockdata(self.name).astype(self.dtype)
             index = len(d) - self.index
@@ -251,13 +319,71 @@ class Kdatas(KdataBase):
                 self._data = []
         return self._data
 
-      
+
+class KWdatas(Kdatas):
+    def get_week_stockdata(self,name):
+        if isinstance(kl.week_df,pandas.core.frame.DataFrame):
+            return kl.week_df[name]
+        kl.get_week()
+        return kl.week_df[name]
+ 
+    @property
+    def data(self):
+        if len(self._data) == 0 or self.cur_code != kl.cur_code:
+
+            self.cur_code = kl.cur_code
+
+            d = self.get_week_stockdata(self.name).astype(self.dtype)
+            index = len(d) - self.index
+            if index > 0:
+                self._data = d[:index]
+            else :
+                self._data = []
+        return self._data
+
+class KMdatas(Kdatas):
+    def get_month_stockdata(self,name):
+        if isinstance(kl.month_df,pandas.core.frame.DataFrame):
+            return kl.month_df[name]
+        kl.get_month()
+        return kl.month_df[name]
+
+    @property
+    def data(self):
+        if len(self._data) == 0 or self.cur_code != kl.cur_code:
+
+            self.cur_code = kl.cur_code
+
+            d = self.get_month_stockdata(self.name).astype(self.dtype)
+            index = len(d) - self.index
+            if index > 0:
+                self._data = d[:index]
+            else :
+                self._data = []
+        return self._data
+
+
+     
 # create open high low close volume datetime
 # 建立全局的 o,O,OPEN,等关键词
-for name in ["open", "high", "low", "close", "volume", 'vol','amount','datetime']:
+for name in ["open", "high", "low", "close", "volume", 'vol','amount','datetime','turn']:
     dtype = float if name != "datetime" else np.str_
     cls = type("{}Kdatas".format(name.capitalize()), (Kdatas, ), {"name": name, "dtype": dtype})
     obj = cls()
     for var in [name[0], name[0].upper(), name.upper()]:
+        globals()[var] = obj
+
+for name in ["open", "high", "low", "close", "volume", 'vol','amount','datetime','turn']:
+    dtype = float if name != "datetime" else np.str_
+    cls = type("{}Kdatas".format(name.capitalize()), (KWdatas, ), {"name": name, "dtype": dtype})
+    obj = cls()
+    for var in ["w"+name[0], "W"+name[0].upper(), "W"+name.upper()]:
+        globals()[var] = obj
+
+for name in ["open", "high", "low", "close", "volume", 'vol','amount','datetime','turn']:
+    dtype = float if name != "datetime" else np.str_
+    cls = type("{}Kdatas".format(name.capitalize()), (KMdatas, ), {"name": name, "dtype": dtype})
+    obj = cls()
+    for var in ["m"+name[0], "M"+name[0].upper(), "M"+name.upper()]:
         globals()[var] = obj
 

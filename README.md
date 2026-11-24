@@ -16,31 +16,71 @@ Klang 最大的亮点是支持中文编程,可以看最后的完整例子
 你可以在线体验 Klang 编程, 无需安装,网站内置了多个选股公式 [Online](https://klang.org.cn/online.html)
 
 
-# Klang 是股票K线形态语言,基于 python3
+## Klang 是股票K线形态语言,基于 python3
 * 语言解释器采用 python的 ply库，他采用了flex，yacc语法的实现
 * 股票数据来源 baostock,zhanluejia
 * 支持 同花顺、通达信、文华财经等的公式, 感谢funcat 移植到了 Python 版本
-* 支持结构形态 感谢talib
 * Klang 语言是基于Python语法拓展了部分自己的语法，并且编写了快捷的股票公式 
 * 支持网页直接使用,交互方便
 * 支持中文编程,一看就懂
 * 增加了股票特征计算
 
-# install
-* 安装过程中遇到talib错误，需要搜索talib源代码解决
+## 增加pattern代码
+   通过zigzag 折点实现模型识别。 支持W底，支持V型反转，支持杯柄（cup-handle）算法
+
+## 麦语言 文华财经， 通达信，同花顺公式支持列表
+   * DNULL,DRAWNULL,REF,REFDATE,CROSS
+   * HHV,LLV,IIF,MIN,MAX,EVERY,EXIST,COUNT,SMA,MA,ABS,MACD,RSI,BOLL,
+   * KDJ(STOCH),SUM,STD,EMA,WMA,APPROX,FORCAST,SLOPE,ALIGNRIGHT,AMA
+
+### 其他函数
+   * CODELIKE,INBLOCK,NAMELIKE
+
+### 未来函数
+   * BACKSET
+
+### 引用函数
+   * BARSLASTCOUNT ,BARSCOUNT,BARSLAST,BARSLASTFIND,BARSNEXT,
+   * BARSSINCE,BARSSINCEN,CALCSTOCKINDEX,CURRBARSCOUNT
+
+
+#### 未实现列表
+   * EXTERNSTR,EXTERNVALUE,SIGNALS\_USER,BARSTATUS,CONST
+
+# 安装
 ```
-git clone https://github.com/asmcos/Klang
+git clone https://github.com/KlangAlpha/Klang
 cd Klang
 pip3 install -r requirements.txt 
 python3 setup.py install
 ```
 
+## 下载数据, 也可以直接使用不下载数据，下载数据约10分钟。
+* 可以跳过，直接运行
+* 下载数据有2种方法，第一种是直接下载压缩包，第二种是使用API下载
+
+* 方法一、 推荐，适用于网络速一般的场景，只有日K
+```
+python3 tools/download.py 
+```
+* 方法二、 通过API下载 首次安装必须使用update_data.py来下载日，周，月数据
+```
+python3 update_data.py
+```
+
 
 # 应用示例 python  版本
-* 第一次会下载数据,预计需要几分钟
+* 第一次会下载数据,预计需要几分钟,推荐先用上面的步骤下载数据后再执行
+* 具体例子可以看 
 ```
-from Klang import *
+python3 examples/test.py
+python3 examples/testparse.py
+```
 
+```
+from Klang import Klang,C,O
+Klang.Klang_init()
+Kl = Klang.Kl
 C/C[1]
 
 ```
@@ -59,7 +99,7 @@ Kl.code('sh.601012')
 * 默认数据是日K
 
 ```
-Kl.date(start='2021-04-02',end='2021-05-01')
+Kl.date(start='2022-04-02',end='2022-11-01')
 ```
 
 ### 显示收盘价
@@ -67,6 +107,12 @@ Kl.date(start='2021-04-02',end='2021-05-01')
 ```
 print(C.data) #显示已经下载周期的所有收盘价
 print(O.data) #显示所有周日的开盘价
+```
+
+### 通过日期索引股票价格
+
+```
+print(C.['2022-05-20'])
 ```
 
 ### 收盘价涨幅
@@ -84,12 +130,13 @@ REF(C,5) # 5周期前的收盘价，5日前收盘价
 ### 同时实现了MA,SMA,HHV,LLV,ABS等
 
 
-# Klang 语言(K浪)
+## Klang 语言(K浪)
 * testparse.py 代码片段
 
 ```
 from Klang.lang import kparser,setPY,Kexec
-
+from Klang import Klang
+Klang.Klang_init()
 # Klang和python的桥梁，支持函数,变量共享
 # 具体使用方法 参见 testparse.py
 
@@ -115,7 +162,7 @@ Kexec("ABCD=pi+1;") #调用K语言执行，执行后K变量共享给了python
 
 
 ### 执行一段代码
-* 详细例子参见 testparse.py
+* 详细例子参见 python3 examples/testparse.py
 * 这里我们定制了一段kloop...endp，表示循环计算所有的A股
 ```
 testblock=\
@@ -148,23 +195,23 @@ Kexec(testblock)
 * kloop,endp 是自定义语法，会遍历整个A股的股票，
 
 
-### examples
-* 使用了网页+websocket server模式
+### server 
+* 使用了网页+ socketio server模式
 * server里调用 Kexec执行 所有的输入
 * 默认的输入会扫描所有的A股4000多只股票
 * 计算结果回传到网页界面显示
 
 ```
-python3 kws_manager.py 
-python3 kws_server.py
+python3 server/kws_manager.py 
+python3 server/kws_server.py
 ```
 
 两个服务同时启动，可以Linux使用 "&" 放到后台
 ```
-python3 kws_manager.py
+python3 server/kws_manager.py
 ```
 
-* 如果kws_server.py启动出错可以有2中方法。
+* 如果kws_server.py启动出错可以有2种方法。
 * 方法一、 安装Klang
 
 ```
@@ -178,7 +225,7 @@ python3 setup install
 ```
 
 浏览 online.html 即可运算公式了
-# 支持中文编程
+## 支持中文编程
 
 ```
 
@@ -200,36 +247,45 @@ python3 setup install
 ```
 
 # 更新
+* 2022.10.19 server 换成socket.io通讯协议
+* 2022.10.17 全面采取了分片执行，真正实现了多服务器并行工作
 * 2021.12.1 增加了特征提取公式
 * 2021.7.3 增加了板块和概念信息，板块来自通达信
 
 
 # 文件说明
-```
-├── Klang
-│   ├── Kdatas.py               # 封装数据接口
-│   ├── Kfeature.py             # 股票特征计算,形态计算
-│   ├── Klang.py                # 主类
-│   ├── __init__.py         
-│   ├── common.py               # 公共设置
-│   ├── data_baostock.py        # 股票数据接口
-│   ├── data_klang.py           # 股票数据接口 klang.org.cn
-│   ├── lang                    # Klang 编程语言目录
-│   │   ├── __init__.py
-│   │   ├── klex.py
-│   │   ├── kparse.py
-│   │   └── mAST.py             # 语言的解释
-│   ├── talib_api.py            # 应用封装talib
-│   └── tdx.py                  # 兼容 通达信公式
-├── LICENSE
-├── README.md
-├── examples
-│   ├── online.html             # 在线使用的代码
-│   └── wsserver.py             # 通过websocket和后台联系
-├── requirements.txt
-├── setup.py
+```bash
+tree server/ examples/ Klang
+server/
+├── __init__.py
+├── kws_manager.py
+├── kws_manager_ws.py
+├── kws_server.py
+├── kws_server_ws.py
+└── online.html
+examples/
+├── test_feature.py
+├── testparse.py
 ├── test.py
-└── testparse.py
+└── test_tdx_api.py
+Klang
+├── common.py
+├── data_klang.py
+├── __init__.py
+├── Kdatas.py
+├── Kfeature.py
+├── Klang.py
+├── KSeq2Feature.py
+├── lang
+│   ├── __init__.py
+│   ├── klex.py
+│   ├── kparse.py
+│   └── mAST.py
+├── pattern
+│   ├── patterns.py
+│   ├── zigzag.js
+│   └── zigzag_lib.py
+└── tdx.py
 
 ```
 

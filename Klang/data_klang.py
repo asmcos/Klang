@@ -1,132 +1,97 @@
 #
 # klang.org.cn 提供的股票数据
 # 数据来自baostock + tdx
+# 数据提供模块来自 Kdata 项目
 # 为了加速Klang运行，数据会被存到本地文件
 # 并且加载到内存
 #
 
-import pandas as pd
+
 import os
 import shutil
 import json
-from threading import Lock
 import requests
 import time
+import pandas as pd
+from .common import end,get_date
+from threading import Lock
+from progress.bar import Bar
 
-#from memory_profiler import profile
+hostname="https://data.klang.org.cn/api"
 
-#加上注释，就使用内存分析功能
-#删除注释，就关闭了内存分析功能
-profile = lambda x: x
+session = requests.Session()
 
-filename_sl = os.path.expanduser("~/.klang_stock_list.csv")
-filename_jsont = os.path.expanduser("~/.klang_stock_trader.json")
+def gethostname():
+   
+    serveriplist = []
+    url = 'https://www.klang.org.cn/api/sysconfigs?keyword=data&filter=1'
+    resp = requests.get(url).json()
+    for i in resp:
+        if i['key'] == 'dataserver':
+            serveriplist = i['value'].split(',')
+    if 'http://' not in serveriplist[0] and 'https://' not in serveriplist[0]:
+        host = "http://" + serveriplist[0] + "/api"
+    else:
+        host = serveriplist[0] + "/api"
+    return host
+    
+hostname = gethostname()
 
-hostname="https://klang.org.cn/api"
-#hostname="http://klang.zhanluejia.net.cn"
+class DataAPI():
+    def __init__(self,host=hostname):
+        self.host = host
+
+    def get_stocklist(self):
+        url = self.host + "/stocklists"
+        return session.get(url)
+
+    def get_factor(self,factorname,date=end):
+        url = self.host + "/getfactors"
+        return session.get(url,params={'factorname':factorname,'date':date})
+
+def get_path(name):
+    t = os.path.expanduser(name)
+    return os.path.normpath(t)
+
+data_path = get_path("~/.klang")
+os.makedirs(data_path, exist_ok=True)
+
+os.makedirs(get_path(data_path+"/day"), exist_ok=True)
+os.makedirs(get_path(data_path+"/week"), exist_ok=True)
+os.makedirs(get_path(data_path+"/month"), exist_ok=True)
+
+
+filename_sl = get_path("~/.klang/klang_stock_list.csv")
+file_updata_list = get_path("~/.klang/update_list.csv")
+
+
 mutex = Lock()
-
 
 #
 #stock list
-#
-cm_dict = {}
+#['code','name','SCR','tdxbk','tdxgn']
+stocklist=[]
+stockindex={}
+stockupdate={} # code, day, week, month ,日，周，月更新日期 
+kapi = DataAPI()
 
-@profile
-def updatestocklist(stname=filename_sl):
 
-    json = requests.get(hostname+"/industries").json()
-    for i in json:
-        cm_dict[i['code']] = i.get('chouma','50')
-    df = pd.json_normalize(json)
-    df = df.drop(columns=['id','updatedAt','id','createdAt'])
-    # 结果集输出到csv文件
-    df.to_csv(stname, index=False,columns=['updateDate','code','code_name','industry','industryClassification','tdxbk','tdxgn'])    
+def get_scr(code):
+    index = stockindex[code]
+    stock = stocklist[index]
+
+    return stock.get('SCR',"50")
 
 def get_chouma(code):
-    return cm_dict.get(code,"50")
+    return get_scr(code)
 
-#
-# extern to Klang
-# 此接口有外部调用
-#
-@profile
-def updatestockdata(Kl):
-    global  stock_json_list
+def save_stockupdate():
+    buf = json.dumps(stockupdate)
+    f1 = open(file_updata_list+'.tmp',"w+")
+    f1.write(buf)
+    f1.close()
+    shutil.move(file_updata_list+".tmp",file_updata_list)
 
-    stocklist = Kl.stocklist
-    
-    f = open(filename_jsont)
-
-    for i in stocklist:
-        content  = f.readline()
-        if len(content) < 8:
-            break
-        stock    = json.loads(content[:-1])
-        code     = stock[0]
-        name     = stock[1]
-        jsondata = stock[2]
-        #print('正在获取',name,'代码',code)
-
-        df = json_to_df(jsondata)
-        if len(df) > 2:
-           df['datetime'] = df['date']
-           df = df.set_index('date')
-        number = Kl.stockindex[code]
-        Kl.df_all[number]["df"] = df
- 
-    f.close()
-
-
-# 从服务器下载数据 同步存储到文件
-def downloadstockdata(Kl):
-    #创建临时文件
-    f = open(filename_jsont+".tmp","w+")
-    for stock in Kl.stocklist:
-        code ,name ,tdxbk,tdxgn= getstockinfo(stock)
-        jsondata,name,code = get_day(name,code,Kl.start_date,Kl.end_date,json=True)
-        #print(code,name)
-        content = json.dumps([code,name,jsondata])    
-        f.write(content+"\n")
-        f.flush()
-    f.close()
-
-    #下载完成，生存目标文件         
-    shutil.move(filename_jsont+".tmp",filename_jsont)
-
-# 从klang获取日K数据
-# append,是否追加到 股票列表
-#
-@profile
-def get_day(name,code,start,end,setindex=False,json=False):
-    
-    #print(name,code)
-
-    mutex.acquire()
-    try:
-        json_data = requests.get(hostname+"/dayks",
-            params={"code":code,"end":end,"limit":200},timeout=1000).json()
-    except:
-        time.sleep(2)
-        json_data = requests.get(hostname+"/dayks",
-            params={"code":code,"end":end,"limit":200},timeout=1000).json()
-   
-    mutex.release()
-    
-    for d in json_data:
-        del d["id"]
-        del d["name"]
-        del d["code"]
-        del d["publishedAt"]
-        del d["createdAt"]
-        del d["updatedAt"]
-        
-    if json==True:
-        return json_data,name,code
-   
-    return json_to_df(json_data,setindex)
-
-@profile 
 def json_to_df(json,setindex=False):
 
     df = pd.json_normalize(json)
@@ -138,10 +103,7 @@ def json_to_df(json,setindex=False):
     if len(df) < 1:
        return []
 
-
-    #df = df.drop(columns=['_id','id'])
     datas = df.sort_values(by="date",ascending=True)
-
 
     #print(len(datas),datas.date[datas.index[-1]])
     if setindex == True:
@@ -158,61 +120,271 @@ def json_to_df(json,setindex=False):
 
     return datas
 
-# 从文件中一行数据 格式化分析出信息
-# 2019-12-09,sz.002094,青岛金王,化工,申万一级行业
-# 时间，股票代码，名称，类别
-@profile
-def getstockinfo(stock):
-    stock = stock.strip()
-    d,code,name,skip1,skip2,tdxbk,tdxgn = stock.split(',')
-    return code,name,tdxbk,tdxgn
+
+       
+
+class GetData:
+    def __init__(self,freq="d"):
+        self.freq = self._name(freq)
+
+
+    def _name(self,_name):
+        name_table = {"day":"d","d":"d",
+                            "week":"w","w":"w",
+                            "month":"m","m":"m"}
+        self.freq = name_table.get(_name,"d")
+        return self.freq #默认是 d
+
+    def append_data(self,code,content):
+        ext_table = {"d":"day","w":"week","m":"month"}
+        ext = ext_table.get(self.freq,"day")
+
+        # 可能是文件不存在的情况
+        try:
+            f1 = open(get_path("~/.klang/"+ ext + "/"+code+ ext + ".json"),"r")
+            content1 = f1.read()
+            f1.close()
+
+            stock    = json.loads(content1)
+            jsondata = stock[2]
+        #print('正在获取',name,'代码',code)
+        except:
+            jsondata = []
+
+        df = pd.json_normalize(content+jsondata)
+        df1 = df[~df.date.duplicated(keep='first')]
+        return json.loads(df1.to_json(orient="records"))
+    
+ 
+
+    def _read_file_data(self,code):
+        ext_table = {"d":"day","w":"week","m":"month"}
+        ext = ext_table.get(self.freq,"day")
+
+        if not os.path.exists(get_path("~/.klang/"+ext +"/" +code+ ext + ".json")):
+            return pd.DataFrame([])
+
+        f1 = open(get_path("~/.klang/"+ ext + "/"+ code+ ext + ".json"),"r")
+
+        content = f1.read()
+        f1.close()
+        stock    = json.loads(content)
+        jsondata = stock[2]
+        #print('正在获取',name,'代码',code)
+        df = json_to_df(jsondata)
+        df['datetime'] = df['date']
+        df = df.set_index('date')
+        return df
+
+    def _read_server_data(self,code,start,end,setindex=False,json=False,append=False):
+        ext_table = {"d":"/dayks","w":"/weeks","m":"/months"}
+        ext_path = ext_table.get(self.freq,"/days")
+
+        if append == True:
+            params = {"code":code,"start":start,"limit":200}
+        else:
+            params = {"code":code,"end":end,"limit":200}
+        mutex.acquire()
+        try:
+            json_data = session.get(hostname+ ext_path,
+                params=params,timeout=1000).json()
+        except:
+            time.sleep(2)
+            json_data = session.get(hostname+ ext_path,
+                params= params,timeout=1000).json()
+        mutex.release()
+        for d in json_data:
+            del d["id"]
+            del d["name"]
+            del d["code"]
+            del d["publishedAt"]
+            del d["createdAt"]
+            del d["updatedAt"]
+
+        if json==True:
+            return json_data
+
+        return json_to_df(json_data,setindex)
+
+    # 下载数据并且全部更新
+    def down_and_save(self,Kl,code,start,end):
+
+        ext_table = {"d":"day","w":"week","m":"month"}
+        ext = ext_table.get(self.freq,"day")
+
+        name = Kl.stockdict[code]['name']
+        # 1. 从服务器下载数据
+        jsondata = self._read_server_data(code,start,end,json=True)
+
+        # 2. 保存到本地硬盘，
+        content = json.dumps([code,name,jsondata])
+        f1 = open(get_path("~/.klang/"+ ext +"/" + code+ ext + ".json"),"w+")
+        f1.write(content)
+        f1.close()
+
+        # 3. 升级更新文件
+        if  stockupdate.get(code,None) is None:
+            stockupdate[code] = {}
+
+        stockupdate[code][ext] = get_date(0)
+        save_stockupdate()
+        return jsondata
+
+    def get_data(self,Kl,code,start,end):
+        df = self._read_file_data(code)
+        if len(df) < 1:
+            jsondata = self.down_and_save (Kl,code,start,end)
+            df = json_to_df(jsondata,setindex=True)
+
+        return df
+
+    # 下载数据 更新数据，只做差异补偿
+
+    def update_data(self,Kl,code,check=True):
+        ext_table = {"d":"day","w":"week","m":"month"}
+        ext = ext_table.get(self.freq,"day")
+
+        if not os.path.exists(get_path("~/.klang/"+ext+"/" +code+ ext + ".json")):
+            return self.get_data(Kl,code,Kl.start_date,Kl.end_date)
+        
+        today = get_date(0)
+
+        name = Kl.stockdict[code]['name']
+        lastday = stockupdate.get(code,{}).get(ext,'2021-01-01')
+        if lastday == today and check:
+            return 
+        jsondata = self._read_server_data(code,lastday,Kl.end_date,json=True,append=True)
+        jsondata = self.append_data(code,jsondata)
+
+        content = json.dumps([code,name,jsondata])
+        f1 = open(get_path("~/.klang/"+ ext +"/" +code+ ext+ ".json"),"w+")
+        f1.write(content)
+        f1.close()
+
+        if  stockupdate.get(code,None) is None:
+            stockupdate[code] = {}
+
+        stockupdate[code][ext] = get_date(0)
+        
+
+# 下载所有的股票
+def downloadstockdata(Kl):
+
+    if Kl.canUpdate == False: #仅仅一个server能下载，其他server直接返回
+        return
+    bar = Bar('Downloading ',max=len(Kl.stocklist))
+    bar.is_tty = lambda :True
+    today = get_date(0)
+    for stock in Kl.stocklist:
+
+        code = stock['code']
+        day_data.down_and_save(Kl,code,Kl.start_date,Kl.end_date)
+        week_data.down_and_save(Kl,code,Kl.start_date,Kl.end_date)
+        month_data.down_and_save(Kl,code,Kl.start_date,Kl.end_date)
+
+        save_stockupdate()
+        bar.next()
+    bar.finish()
+    save_stockupdate()
+
+# 更新所有的股票
+# 更新仅仅更新日K，下载是下载日，月，周
+def updatestockdata(Kl,check=True):
+    if Kl.canUpdate == False: #仅仅一个server更新，其他server直接返回
+        return
+
+    bar = Bar('Downloading ',max=len(Kl.stocklist))
+    bar.is_tty = lambda :True
+    today = get_date(0)
+    for stock in Kl.stocklist:
+        code = stock['code']
+
+        day_data.update_data(Kl,code,check)
+        #week_data.update_data(Kl,code,check)
+        #month_data.update_data(Kl,code,chedk)
+        save_stockupdate()
+        bar.next()
+    bar.finish()
+    save_stockupdate()
+
 
 
 #
 # 从网上下载数据或者从文件加载股票数据    
 # 加载后数据存放在(Kl.df_all)
 #
-@profile
-def get_all_day(Kl):
-    stocklist = Kl.stocklist
-    # 如果文件存在,可以直接从文件加载数据
-    # 要强制从网上加载数据,可以设置reload=True
-    if os.path.exists(filename_jsont) and not Kl.reload:
-        print("正在从文件",filename_jsont,"加载数据")
-        updatestockdata(Kl)
-        return 
+def get_all_data(Kl):    
+    updatestockdata(Kl,check=True) # 检查更新和追加数据
 
-    print("正在从网上下载股票数据,时间将会有点长")
-    downloadstockdata(Kl)
-    updatestockdata(Kl)
+def add_factor(name,order):
+    result = kapi.get_factor(name).json()
+    for i in result:
+        code = i['code']
+        index = stockindex.get(code,None)
+        if index is None:
+            continue        
+        stocklist[index][name] = i['value'].split(",")[0]
+    # tdxgn 有多个字段用 ',' 分开，所以要处理
 
-@profile
+def updatestocklist(stname=filename_sl):
+    global stocklist
+    listjson = kapi.get_stocklist().json()
+    index = 0
+    stocklist = []
+
+    for i in listjson:
+        stocklist.append({"code":i['code'],"name":i['name'],"df":None})
+        stockindex[i['code']] = index
+        index += 1
+
+    print("正在加载因子:筹码，板块 ")
+    add_factor("SCR",2)
+    add_factor("tdxbk",3)
+    add_factor("tdxgn",4)
+    print("因子加载完成")
+
+    df = pd.json_normalize(stocklist)
+    
+    # 结果集输出到csv文件
+    df.to_csv(stname, index=False,columns=['code','name','SCR','tdxbk','tdxgn'])  
+
+
 def init_stock_list(Kl,offset=0):
+    global stocklist,stockupdate
+   
     if not os.path.exists(filename_sl):
         print('正在下载股票库列表....')
         updatestocklist(filename_sl)
         print("股票列表下载完成")
 
+    stocklist  = []
     print("正在从文件",filename_sl,"加载股票列表")
-    stocklist = open(filename_sl).readlines()
-    stocklist = stocklist[1+int(offset):] #删除第一行
+    stocklines = open(filename_sl,encoding='utf-8').readlines()
+    stocklines = stocklines[1:] #删除第一行
 
-    #stocklist = stocklist[:100]
-    # 初始化 code到index 对应表
-    number = 0
-    Kl.df_all = []
-    for stock in stocklist:
-            code ,name ,tdxbk,tdxgn = getstockinfo(stock)
-            Kl.stockindex[code] = number
-            Kl.df_all.append({"name":name,"df":None,"code":code,"tdxbk":tdxbk,"tdxgn":tdxgn}) 
-            number += 1
-        
+    index = 0 
+    for i in stocklines:
+        i = i.strip()
+        code,name,scr,tdxbk,tdxgn = i.split(',')
+        stocklist.append({"code":code,"name":name,"df":None,'SCR':scr,"tdxbk":tdxbk,"tdxgn":tdxgn})
+        Kl.stockdict[code]  = {"name":name,'SCR':scr,"tdxbk":tdxbk,"tdxgn":tdxgn,"index":index}
+        stockindex[code] = index
+        index += 1
 
-    # 初始化筹码
-    json = requests.get(hostname+"/industries").json()
-    for i in json:
-        cm_dict[i['code']] = i.get('chouma','50')
+    #
+    # 获取股票 更新列表
+    #
+    if os.path.exists(file_updata_list):
+        try:
+            f = open(file_updata_list)
+            stockupdate = json.load(f)
+            f.close()
+        except: #存在列表保存不完整的情况
+            pass
 
     return stocklist
 
+day_data   = GetData(freq="d")
+week_data  = GetData(freq="w")
+month_data = GetData(freq="m")
 

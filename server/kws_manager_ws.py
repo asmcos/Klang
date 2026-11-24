@@ -6,11 +6,17 @@ import asyncio
 import json
 import logging
 import websockets
+import socket
+import traceback
 from threading import Lock,Thread
 logging.basicConfig()
 
 import threading
-import sys 
+import sys,time,os 
+
+# K WS manager 9088
+# nginx ws 8099 -> 9088
+# nginx wss 9099 -> 9088
 
 if len(sys.argv) > 1:
     port = int(sys.argv[1])
@@ -30,20 +36,24 @@ def PrintException():
 
 ###################web socket######################
 # 服务器列表
-server_list=[
-]
+# 0, 默认的，老的选股
+# 1, 回测
+# 2, 选股
+##############################
+server_list = {
+    0:[],
+    1:[],
+    2:[],        
+}
+
 #用户列表
 user_list=[]
-
-
 
 mutex = Lock ()
 mutexsu = Lock () #server and user 操作
 
 # server 和klang执行服务器交互
 # Klang msg type
-#K_REG          = "K_REG"   #服务器发送给管理这服务器上线
-#K_UNREG        = "K_UNREG" #服务器发送给管理者服务器离开
 K_HEARTBEAT    = "K_HEART" #心跳包 
 K_EXE          = "K_EXE"  #管理者发送给服务器
 K_DONE         = "K_DONE" #服务器返回给管理者
@@ -75,28 +85,42 @@ class KlangMSG():
     async def parse(self,msg):
         if msg["type"] == K_RET:
             msg["type"] = U_RET
-            msg["retcode"] = "DISPLAY"
             data = json.dumps(msg)
             await self.exe_user.send(data) #转发给用户
 
         if msg["type"] == K_DONE:
-            
-            await send_notices()
-            await self.exe_user.handler.done()
+                        
+            #await self.exe_user.handler.done()
             mutex.acquire()
             self.state = 0
             self.exe_user = None
             mutex.release()
+            if msg['loop'] != False:
+                await send_notices()
+
+        if msg["type"] == "LOOP_EXE":
+            #获取用户websocket
+            #同时释放本服务器任务
+            ws_user = self.exe_user
             
-    def list_increase(self):
+            mutex.acquire()
+            self.state = 0
+            self.exe_user = None
+            mutex.release()
+            await send_notices()
+            t = threading.Thread(target=do_loop,args=(msg,ws_user))
+            t.start()
+
+    def list_increase(self,stype=0):
+        self.stype = stype
         mutexsu.acquire()
-        server_list.append(self.websocket)
+        server_list[stype].append(self.websocket)
         mutexsu.release()
 
     def list_decrease(self):
         mutexsu.acquire()
-        if self.websocket in server_list:
-            server_list.remove(self.websocket)
+        if self.websocket in server_list[self.stype]:
+            server_list[self.stype].remove(self.websocket)
         mutexsu.release()
 #
 # 浏览器用户和管理者交互
@@ -138,24 +162,53 @@ class UserMSG():
 
     async def parse(self,msg):
         if msg["type"] == U_EXE:
+            stype = msg.get("stype",0)
+
+            #
+            # 1.） 查找服务器数量
+            #
+            if find_server_count(stype) == 0 :
+                busy_msg = {"type":U_RET,"retcode":"ERROR","errmsg":"没有请求类型的服务器"}
+                data = json.dumps(busy_msg)
+                await self.websocket.send(data)
+
+
             mutex.acquire()
-            ws = find_server()
-            if ws is not None: #找到空闲服务器
+
+            #
+            # 2.) 获取执行类型
+            #
+            isloop = msg.get('loop')
+
+            ws = find_server(stype)
+            if ws is None:
+                busy_msg = {"type":U_RET,"retcode":"ERROR","errmsg":"没有请求类型的服务器"}
+                data = json.dumps(busy_msg)
+                await self.websocket.send(data)
+                return
+
+            if isloop : #等待返回code列表后，再次执行任务
                 ws.handler.exe_user = self.websocket
-                msg["type"]=K_EXE
+                msg["type"] = K_EXE
+                msg["event"] = "GET_BASE_LIST"
+                msg["loop"]  = False # 不再让kserver处理循环，由mangager处理循环
                 ws.handler.state = 1  
                 await send_notices()              
                 await ws.handler.pack_exe(msg)
-            else:
-                busy_msg = {"type":U_RET,"retcode":"ERROR","errmsg":"没有空闲服务服务器请稍后"}
-                data = json.dumps(busy_msg)
-                await self.websocket.send(data)
+                
+            else: # 立即执行 
+
+                ws.handler.exe_user = self.websocket
+                msg["type"]=K_EXE
+                msg["event"] = "DO"
+                ws.handler.state = 1  
+                await send_notices()              
+                await ws.handler.pack_exe(msg)
             mutex.release()
 
         if msg["type"] == U_CMD:
-            if msg["content"] == "UPDATEALL":
-                msg["type"] = K_CMD
-                await updateall(msg)
+            msg["type"] = K_CMD
+            await updateall(msg)
 
     def list_increase(self):
         mutexsu.acquire()
@@ -168,9 +221,51 @@ class UserMSG():
             user_list.remove(self.websocket)
         mutexsu.release()
 
+def await_run(coroutine):
+    try:
+        coroutine.send(None)
+    except StopIteration as e:
+        return e.value
+
+def await_flush():
+    # Windows 平台需要使用 run_once刷新要发送的数据，否则堆积发送数据直到下一个loop run发生
+    if sys.platform == 'win32':
+        try:
+            loop = asyncio.get_running_loop()
+            loop._run_once()
+        except:
+            pass
+
+
+
+def do_loop(msg,ws_user):
+
+    stype = msg.get("stype",0)
+    stocklist = msg["stocklist"]
+    del msg["stocklist"]
+    content = msg["content"]
+    for stock in stocklist:
+        ws = find_server(stype) #没有服务器，任务终止
+        if ws is None:
+            await_run(ws_user.handler.done())
+            await_flush()
+            return
+
+        source_code = "code('" + stock["code"] + "')\n;" + content
+        msg ["content"] = source_code
+        ws.handler.exe_user = ws_user
+        msg["type"] = K_EXE
+        msg["event"] = "DO"
+        ws.handler.state = 1
+        await_run(ws.handler.pack_exe(msg))
+        await_flush()
+
+    await_run(ws_user.handler.done())
+    await_flush()
+
 async def updateall(msg):
     data = json.dumps(msg)
-    for s in server_list:
+    for s in server_list[msg["stype"]]:
         try:
             await s.send(data)
         except:
@@ -178,8 +273,9 @@ async def updateall(msg):
 
 async def send_notices():
     server_state = []
-    for s in server_list:
-        server_state.append(s.handler.state)
+    for key in server_list.keys() :
+        for s in server_list[key]:
+            server_state.append(s.handler.state)
     msg = json.dumps({
         "type":U_INFO,
         "servers":server_state,
@@ -192,12 +288,24 @@ async def send_notices():
             print("Use send failed remove from list")
             user.handler.list_decrease()
 
-def find_server():
-    for w in server_list:
-        if w.handler.state == 0:
-            return w
-    return None
+def find_server(stype):
 
+    while True:
+        server_count = find_server_count(stype)
+        if server_count == 0:
+            return None
+
+        server = server_list[stype]
+        for w in server:
+            if w.handler.state == 0:
+                return w
+
+        # 1 ms 等待服务器完成任务
+        time.sleep(0.001)
+
+def find_server_count(stype):
+    server = server_list[stype]
+    return len(server)
 
 async def listen(websocket, path):
 
@@ -208,7 +316,12 @@ async def listen(websocket, path):
     if (path == "/klang"): 
         print("A new server connect",websocket.remote_address)
         websocket.handler = KlangMSG(websocket)
-        websocket.handler.list_increase()
+        websocket.handler.list_increase(0)
+
+    if (path == "/kbtserver"): 
+        print("A backtest server connect",websocket.remote_address)
+        websocket.handler.list_increase(1)
+
 
     # send msg to all USERS
     await send_notices()
@@ -217,21 +330,27 @@ async def listen(websocket, path):
     try:
         async for data in websocket: 
             msg = json.loads(data)
-            if msg["type"] != K_RET:
+            if msg["type"] not in  [K_RET ,"LOOP_EXE",K_DONE]:
                 print(msg)
             await websocket.handler.parse(msg)        
     except Exception as e:
         websocket.handler.list_decrease()
         PrintException()
         print(e)
+        traceback.print_stack()
     finally:
         websocket.handler.list_decrease()
+        
 
 #data = asyncio.wait_for(s.recv(), timeout=10)
+async def main():
 
-start_server = websockets.serve(listen, "0.0.0.0", port)
-print("Websocket manager start port:",port)
-asyncio.get_event_loop().run_until_complete(start_server)
-asyncio.get_event_loop().run_forever()
+    print("Websocket manager start port:",port)
+    async with websockets.serve(listen, "0.0.0.0", port,ping_interval=5000,ping_timeout=5000) as s:
+        for sock in s.server.sockets:
+            sock.setsockopt(socket.SOL_SOCKET,socket.SO_REUSEADDR,1)
+        await asyncio.Future()
+
+asyncio.run(main())
 
 

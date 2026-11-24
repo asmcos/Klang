@@ -1,8 +1,7 @@
 numpy
 pandas
-baostock
-matplotlib
 requests
 ply
-websockets
-TA-Lib
+progress
+eventlet
+python-socketio[client]

@@ -4,6 +4,7 @@
 
 import sys
 import linecache
+import traceback
 
 DEBUG_MODE = False
 symbols = {}
@@ -29,15 +30,6 @@ class setPY():
 def debug(*params):
     if DEBUG_MODE:
         print("[DBG] %s" % (' : '.join(str(x) for x in params),))
-
-def PrintException():
-    exc_type, exc_obj, tb = sys.exc_info()
-    f = tb.tb_frame
-    lineno = tb.tb_lineno
-    filename = f.f_code.co_filename
-    linecache.checkcache(filename)
-    line = linecache.getline(filename, lineno, f.f_globals)
-    print ('EXCEPTION IN ({}, LINE {} "{}"): {}'.format(filename, lineno, line.strip(), exc_obj))
 
 class mAST:
     action = None
@@ -93,14 +85,14 @@ class mAST:
 
         elif self.action == 'kloop':
             Kl  = getpyglobals('Kl')
-            for df in Kl.df_all:
+            for  stock in Kl.stocklist:
                 try:
-                    Kl.code(df["code"])
+                    Kl.code(stock["code"])
                     for x in self.params:
                         mAST.resolve(x)
                 except :
-                    print("Klang ERROR",df['code'],df['name'])
-                    PrintException()
+                    print("Klang ERROR",Kl.cur_code,Kl.cur_name)
+                    traceback.print_exc()
 
         elif self.action == 'loop':
             for i in self.params[1]:
@@ -123,6 +115,8 @@ class mAST:
                     'AND': lambda a, b: (a and b),
                     'OR':  lambda a, b: (a or b),
                 }[op](prev, comp)
+        elif self.action == "kstop":
+            result = "KSTOP"
 
         elif self.action == 'binop':
             a = mAST.resolve(self.params[0])
