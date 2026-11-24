@@ -17,25 +17,34 @@ from .common import end,get_date
 from threading import Lock
 from progress.bar import Bar
 
-hostname="https://data.klang.org.cn/api"
+DEFAULT_HOST="https://data.klang.org.cn/api"
+hostname=DEFAULT_HOST
 
 session = requests.Session()
 
 def gethostname():
-   
-    serveriplist = []
-    url = 'https://www.klang.org.cn/api/sysconfigs?keyword=data&filter=1'
-    resp = requests.get(url).json()
-    for i in resp:
-        if i['key'] == 'dataserver':
-            serveriplist = i['value'].split(',')
-    if 'http://' not in serveriplist[0] and 'https://' not in serveriplist[0]:
-        host = "http://" + serveriplist[0] + "/api"
-    else:
-        host = serveriplist[0] + "/api"
-    return host
-    
-hostname = gethostname()
+    """从站点配置接口取数据服务器地址。
+
+    该接口可能下线或临时不可用（例如返回 404/HTML），任何失败都
+    回退到 DEFAULT_HOST，绝不让 import Klang 因一次联网而崩溃。
+    不再在模块导入时自动调用，只在真正需要刷新地址时手动调用。
+    """
+    global hostname
+    try:
+        url = 'https://www.klang.org.cn/api/sysconfigs?keyword=data&filter=1'
+        resp = requests.get(url, timeout=3).json()
+        serveriplist = []
+        for i in resp:
+            if i.get('key') == 'dataserver':
+                serveriplist = i['value'].split(',')
+        if serveriplist and serveriplist[0].strip():
+            host = serveriplist[0].strip()
+            if not host.startswith(('http://', 'https://')):
+                host = "http://" + host
+            hostname = host.rstrip('/') + "/api"
+    except Exception:
+        pass
+    return hostname
 
 class DataAPI():
     def __init__(self,host=hostname):
@@ -349,13 +358,28 @@ def updatestocklist(stname=filename_sl):
     df.to_csv(stname, index=False,columns=['code','name','SCR','tdxbk','tdxgn'])  
 
 
+def print_data_setup_hint():
+    """本地数据缺失时给出明确提示：import 不联网，需手动更新。"""
+    line = "=" * 62
+    print("\n" + line)
+    print("[Klang] 本地股票列表不存在：" + filename_sl)
+    print("[Klang] import 不会联网更新数据，请先手动下载数据到 " + data_path + " ：")
+    print("[Klang]   方式一（数据包）：在项目根目录执行  python3 tools/download.py")
+    print("[Klang]   方式二（API）  ：在项目根目录执行  python3 update_data.py")
+    print("[Klang] 注意：当前服务端 data.klang.org.cn 返回 502、数据包链接返回 404，")
+    print("[Klang]       两个入口暂时都取不到数据，需等服务端恢复后再执行。")
+    print("[Klang] 数据就绪后重新 import Klang 即可，无需重启 Python 以外的操作。")
+    print(line + "\n")
+
+
 def init_stock_list(Kl,offset=0):
     global stocklist,stockupdate
-   
+
     if not os.path.exists(filename_sl):
-        print('正在下载股票库列表....')
-        updatestocklist(filename_sl)
-        print("股票列表下载完成")
+        # 缺本地列表时不再隐式联网下载（老接口已失效，且 import 不应触发更新）
+        print_data_setup_hint()
+        stocklist = []
+        return stocklist
 
     stocklist  = []
     print("正在从文件",filename_sl,"加载股票列表")

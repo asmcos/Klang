@@ -100,18 +100,23 @@ Kl = Klang()
 
 def Klang_init():
     global Kl
+    import os
 
-    #初始化股票列表，并且把name，code放到 df_all，此时df为加载
+    # 只从本地缓存初始化股票列表；列表缺失时 init_stock_list 给出更新提示，
+    # 不会在 import 期联网下载。
     Kl.stocklist = Kl.data_engine.init_stock_list(Kl)
+    if not Kl.stocklist:
+        return
 
-    #异步加载df 放到df_all
-    t = threading.Thread(target=Kl.get_all_data)
-    t.start()
-
-    Kl.cur_code = Kl.stocklist[0]['code']    
-    Kl.cur_name = Kl.stocklist[0]['name']    
-    #set default stock
+    Kl.cur_code = Kl.stocklist[0]['code']
+    Kl.cur_name = Kl.stocklist[0]['name']
     Kl.date(start='2021-01-01')
-    Kl.code(Kl.cur_code)
+
+    # import 期只读本地：默认股票的本地日K存在才加载。
+    # 不在 import 时联网下载、也不启动后台更新线程；
+    # 更新由 update_data.py / Kl.downloadall() / Kl.updateall() 显式触发。
+    day_file = datakl.get_path(datakl.data_path + "/day/" + Kl.cur_code + "day.json")
+    if os.path.exists(day_file):
+        Kl.code(Kl.cur_code)
 
     

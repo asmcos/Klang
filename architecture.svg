@@ -1,0 +1,35 @@
+<svg role="img" viewBox="0 0 680 176" width="100%" xmlns="http://www.w3.org/2000/svg" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Microsoft YaHei', 'PingFang SC', sans-serif">
+<title>Klang 核心逻辑四层链路</title>
+<desc>数据层到序列对象、指标函数、执行分层的流程，并标注首次运行崩溃点</desc>
+<defs>
+<marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+<path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+</marker>
+</defs>
+<g>
+<rect x="40" y="50" width="135" height="56" rx="8" fill="#E6F1FB" stroke="#185FA5" stroke-width="0.5"/>
+<text x="107" y="72" text-anchor="middle" dominant-baseline="central" font-size="14" font-weight="500" fill="#0C447C">数据层</text>
+<text x="107" y="91" text-anchor="middle" dominant-baseline="central" font-size="12" fill="#185FA5">json → DataFrame</text>
+</g>
+<g>
+<rect x="200" y="50" width="135" height="56" rx="8" fill="#E6F1FB" stroke="#185FA5" stroke-width="0.5"/>
+<text x="267" y="72" text-anchor="middle" dominant-baseline="central" font-size="14" font-weight="500" fill="#0C447C">序列对象</text>
+<text x="267" y="91" text-anchor="middle" dominant-baseline="central" font-size="12" fill="#185FA5">C/O/H/L 重载</text>
+</g>
+<g>
+<rect x="360" y="50" width="135" height="56" rx="8" fill="#EEEDFE" stroke="#534AB7" stroke-width="0.5"/>
+<text x="427" y="72" text-anchor="middle" dominant-baseline="central" font-size="14" font-weight="500" fill="#3C3489">指标与形态</text>
+<text x="427" y="91" text-anchor="middle" dominant-baseline="central" font-size="12" fill="#534AB7">MA·REF·特征</text>
+</g>
+<g>
+<rect x="520" y="50" width="120" height="56" rx="8" fill="#EEEDFE" stroke="#534AB7" stroke-width="0.5"/>
+<text x="580" y="72" text-anchor="middle" dominant-baseline="central" font-size="14" font-weight="500" fill="#3C3489">执行分发</text>
+<text x="580" y="91" text-anchor="middle" dominant-baseline="central" font-size="12" fill="#534AB7">Kexec·多机并行</text>
+</g>
+<line x1="176" y1="78" x2="198" y2="78" stroke="#888780" stroke-width="1.5" marker-end="url(#arrow)"/>
+<line x1="336" y1="78" x2="358" y2="78" stroke="#888780" stroke-width="1.5" marker-end="url(#arrow)"/>
+<line x1="496" y1="78" x2="518" y2="78" stroke="#888780" stroke-width="1.5" marker-end="url(#arrow)"/>
+<rect x="40" y="126" width="440" height="30" rx="6" fill="#FCEBEB" stroke="#A32D2D" stroke-width="0.5"/>
+<circle cx="55" cy="141" r="4" fill="#A32D2D"/>
+<text x="67" y="141" dominant-baseline="central" font-size="12" fill="#791F1F">崩溃点：import 时就联网取服务器地址，接口一异常整个库进不去</text>
+</svg>

@@ -25,6 +25,11 @@ df2 = df[(df.date >= '2020-10-01') &
 #
 
 def getstockdata(name):
+    # 本地无数据（未选择股票或尚未下载）时返回空序列，
+    # 不要在访问 C.data 时抛难懂的 TypeError 或隐式联网更新。
+    if kl.cur_code is None or not kl.stockdict:
+        return pandas.Series([], dtype="float64")
+
     if isinstance(kl.day_df,pandas.core.frame.DataFrame):
         return kl.day_df[name]
     kl.get_day()

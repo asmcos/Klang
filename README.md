@@ -7,9 +7,13 @@ Klang 是Kline语言,即股票语言,支持方便快捷的股票编程,可以轻
 
 Klang 最大的亮点是支持中文编程,可以看最后的完整例子
 
-最新仓库 已经转移到 https://github.com/KlangAlpha/Klang
-
 任何问题欢迎访问[问答社区](https://forum.klang.org.cn)
+
+## 核心逻辑
+
+![Klang 核心逻辑四层链路](architecture.svg)
+
+从左到右看这条链路：数据层把 HTTP JSON 落成 DataFrame；序列对象层用 `C/O/H/L` 的运算符重载，让 `C[1]`、`C>C[1]` 这类整序列表达式成立；指标与形态层在这之上实现 MA/REF 等通达信公式和 W 底、杯柄等形态识别；最上层的 `Kexec` 解释中文公式，配合 socketio 把全 A 股扫描分片到多台机器并行执行。
 
 # 在线试用
 * 内置中文编程公式

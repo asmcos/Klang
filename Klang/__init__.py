@@ -17,7 +17,12 @@ version="0.9.9"
 setstock(Kl)
 
 #2. init Klang
-#Klang_init()
+# 用本地缓存自动初始化，让 `from Klang import C` 开箱可用。
+# 新机器没有缓存时，初始化可能取数失败，这里兜住异常，保证 import 不崩。
+try:
+    Klang_init()
+except Exception:
+    pass
 
 #3.set to tdx
 # 共享给 tdx模块
