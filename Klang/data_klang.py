@@ -1,414 +1,238 @@
 #
-# klang.org.cn 提供的股票数据
-# 数据来自baostock + tdx
-# 数据提供模块来自 Kdata 项目
-# 为了加速Klang运行，数据会被存到本地文件
-# 并且加载到内存
+# klang.org.cn 提供的股票数据（本地缓存版）
 #
-
-
+# 本模块现在**只负责本地数据的加载**，不联网、不更新。
+# 数据下载/更新请用 tools/eltdx_updater.py（基于 eltdx）。
+#
 import os
-import shutil
 import json
-import requests
-import time
+import shutil
 import pandas as pd
-from .common import end,get_date
-from threading import Lock
-from progress.bar import Bar
+from .common import end, get_date
+from datetime import date, datetime, timedelta
 
-DEFAULT_HOST="https://data.klang.org.cn/api"
-hostname=DEFAULT_HOST
-
-session = requests.Session()
-
-def gethostname():
-    """从站点配置接口取数据服务器地址。
-
-    该接口可能下线或临时不可用（例如返回 404/HTML），任何失败都
-    回退到 DEFAULT_HOST，绝不让 import Klang 因一次联网而崩溃。
-    不再在模块导入时自动调用，只在真正需要刷新地址时手动调用。
-    """
-    global hostname
-    try:
-        url = 'https://www.klang.org.cn/api/sysconfigs?keyword=data&filter=1'
-        resp = requests.get(url, timeout=3).json()
-        serveriplist = []
-        for i in resp:
-            if i.get('key') == 'dataserver':
-                serveriplist = i['value'].split(',')
-        if serveriplist and serveriplist[0].strip():
-            host = serveriplist[0].strip()
-            if not host.startswith(('http://', 'https://')):
-                host = "http://" + host
-            hostname = host.rstrip('/') + "/api"
-    except Exception:
-        pass
-    return hostname
-
-class DataAPI():
-    def __init__(self,host=hostname):
-        self.host = host
-
-    def get_stocklist(self):
-        url = self.host + "/stocklists"
-        return session.get(url)
-
-    def get_factor(self,factorname,date=end):
-        url = self.host + "/getfactors"
-        return session.get(url,params={'factorname':factorname,'date':date})
 
 def get_path(name):
     t = os.path.expanduser(name)
     return os.path.normpath(t)
 
+
 data_path = get_path("~/.klang")
 os.makedirs(data_path, exist_ok=True)
-
-os.makedirs(get_path(data_path+"/day"), exist_ok=True)
-os.makedirs(get_path(data_path+"/week"), exist_ok=True)
-os.makedirs(get_path(data_path+"/month"), exist_ok=True)
-
+os.makedirs(get_path(data_path + "/day"), exist_ok=True)
+os.makedirs(get_path(data_path + "/week"), exist_ok=True)
+os.makedirs(get_path(data_path + "/month"), exist_ok=True)
 
 filename_sl = get_path("~/.klang/klang_stock_list.csv")
 file_updata_list = get_path("~/.klang/update_list.csv")
 
 
-mutex = Lock()
+# ---------------------------------------------------------------------------
+# 数据新鲜度提示
+# ---------------------------------------------------------------------------
+def last_local_date(freq="day", sample_limit=20):
+    """扫描本地 K 线文件，返回出现最多的最后一个日期。
 
-#
-#stock list
-#['code','name','SCR','tdxbk','tdxgn']
-stocklist=[]
-stockindex={}
-stockupdate={} # code, day, week, month ,日，周，月更新日期 
-kapi = DataAPI()
+    只抽样 sample_limit 个文件，避免每次 import 扫描 5000+ 文件。
+    返回 (last_date_str, file_count)；无数据时返回 (None, 0)。
+    """
+    ext = {"day": "day", "week": "week", "month": "month"}.get(freq, "day")
+    folder = get_path(data_path + "/" + ext)
+    if not os.path.isdir(folder):
+        return None, 0
+
+    files = [f for f in os.listdir(folder) if f.endswith(ext + ".json")]
+    if not files:
+        return None, 0
+
+    counter = {}
+    step = max(1, len(files) // sample_limit)
+    sampled = files[::step][:sample_limit]
+    for name in sampled:
+        try:
+            with open(os.path.join(folder, name), encoding="utf-8") as f:
+                obj = json.load(f)
+            rows = obj[2] if isinstance(obj, list) and len(obj) >= 3 else []
+            if not rows:
+                continue
+            # 本地文件是倒序存放（最新在前），取第一条的 date
+            d = rows[0].get("date") if isinstance(rows[0], dict) else None
+            if d:
+                counter[d] = counter.get(d, 0) + 1
+        except Exception:
+            continue
+
+    if not counter:
+        return None, len(files)
+    # 取出现次数最多的日期作为代表
+    last = max(counter, key=counter.get)
+    return last, len(files)
+
+
+def check_freshness(warn_days=7):
+    """检查本地数据新鲜度，返回 (last_date, lag_days, file_count)。
+
+    lag_days 为 None 表示无数据。import 时打印提示但不联网。
+    """
+    last, count = last_local_date("day")
+    if not last:
+        return None, None, count
+    try:
+        lag = (date.today() - date.fromisoformat(last[:10])).days
+    except Exception:
+        lag = None
+    return last, lag, count
+
+
+def print_data_status():
+    """import 时调用：报告本地数据状态，必要时提示更新。"""
+    global stocklist
+    # 缺股票列表时给出下载指引
+    if not os.path.exists(filename_sl):
+        print("[Klang] 本地股票列表不存在：" + filename_sl)
+        print("[Klang] import 不联网、不更新。请运行更新脚本下载数据：")
+        print("[Klang]   cd <项目根目录> && python3 tools/eltdx_updater.py")
+        return
+
+    last, lag, count = check_freshness()
+    if not last:
+        print("[Klang] 本地有股票列表但没有日K数据，请运行：python3 tools/eltdx_updater.py")
+        return
+    if lag is not None and lag > 7:
+        print("[Klang] 本地日K最后日期 %s，距今 %d 天，数据已过期。" % (last, lag))
+        print("[Klang] 需要更新请运行：python3 tools/eltdx_updater.py")
+    # lag <= 7 时静默，不打扰
+
+
+# ---------------------------------------------------------------------------
+# 股票列表（只读本地）
+# ---------------------------------------------------------------------------
+stocklist = []
+stockindex = {}
+stockupdate = {}
 
 
 def get_scr(code):
-    index = stockindex[code]
-    stock = stocklist[index]
+    index = stockindex.get(code)
+    if index is None or index >= len(stocklist):
+        return "50"
+    return stocklist[index].get("SCR", "50")
 
-    return stock.get('SCR',"50")
 
 def get_chouma(code):
     return get_scr(code)
 
-def save_stockupdate():
-    buf = json.dumps(stockupdate)
-    f1 = open(file_updata_list+'.tmp',"w+")
-    f1.write(buf)
-    f1.close()
-    shutil.move(file_updata_list+".tmp",file_updata_list)
 
-def json_to_df(json,setindex=False):
-
-    df = pd.json_normalize(json)
-    if len(df) < 1:
-       return []
-
-    df = df[df['volume']>0.0] 
-    # 删除后再次判断
-    if len(df) < 1:
-       return []
-
-    datas = df.sort_values(by="date",ascending=True)
-
-    #print(len(datas),datas.date[datas.index[-1]])
-    if setindex == True:
-        datas['datetime'] = datas['date']
-        datas = datas.set_index('date')
-    close  = datas['close'].iloc[-1]
-    volume = datas['volume'].iloc[-1]
-    turn   = datas['turn'].iloc[-1]
-    try :
-        datas['hqltsz'] = float(volume) * float(close)/ float(turn) / 1000000 
-    except:
-        datas['hqltsz'] = 0.0001 #没有交易量
-    datas.rename(columns={'volume':'vol'},inplace = True) 
-
-    return datas
-
-
-       
-
-class GetData:
-    def __init__(self,freq="d"):
-        self.freq = self._name(freq)
-
-
-    def _name(self,_name):
-        name_table = {"day":"d","d":"d",
-                            "week":"w","w":"w",
-                            "month":"m","m":"m"}
-        self.freq = name_table.get(_name,"d")
-        return self.freq #默认是 d
-
-    def append_data(self,code,content):
-        ext_table = {"d":"day","w":"week","m":"month"}
-        ext = ext_table.get(self.freq,"day")
-
-        # 可能是文件不存在的情况
-        try:
-            f1 = open(get_path("~/.klang/"+ ext + "/"+code+ ext + ".json"),"r")
-            content1 = f1.read()
-            f1.close()
-
-            stock    = json.loads(content1)
-            jsondata = stock[2]
-        #print('正在获取',name,'代码',code)
-        except:
-            jsondata = []
-
-        df = pd.json_normalize(content+jsondata)
-        df1 = df[~df.date.duplicated(keep='first')]
-        return json.loads(df1.to_json(orient="records"))
-    
- 
-
-    def _read_file_data(self,code):
-        ext_table = {"d":"day","w":"week","m":"month"}
-        ext = ext_table.get(self.freq,"day")
-
-        if not os.path.exists(get_path("~/.klang/"+ext +"/" +code+ ext + ".json")):
-            return pd.DataFrame([])
-
-        f1 = open(get_path("~/.klang/"+ ext + "/"+ code+ ext + ".json"),"r")
-
-        content = f1.read()
-        f1.close()
-        stock    = json.loads(content)
-        jsondata = stock[2]
-        #print('正在获取',name,'代码',code)
-        df = json_to_df(jsondata)
-        df['datetime'] = df['date']
-        df = df.set_index('date')
-        return df
-
-    def _read_server_data(self,code,start,end,setindex=False,json=False,append=False):
-        ext_table = {"d":"/dayks","w":"/weeks","m":"/months"}
-        ext_path = ext_table.get(self.freq,"/days")
-
-        if append == True:
-            params = {"code":code,"start":start,"limit":200}
-        else:
-            params = {"code":code,"end":end,"limit":200}
-        mutex.acquire()
-        try:
-            json_data = session.get(hostname+ ext_path,
-                params=params,timeout=1000).json()
-        except:
-            time.sleep(2)
-            json_data = session.get(hostname+ ext_path,
-                params= params,timeout=1000).json()
-        mutex.release()
-        for d in json_data:
-            del d["id"]
-            del d["name"]
-            del d["code"]
-            del d["publishedAt"]
-            del d["createdAt"]
-            del d["updatedAt"]
-
-        if json==True:
-            return json_data
-
-        return json_to_df(json_data,setindex)
-
-    # 下载数据并且全部更新
-    def down_and_save(self,Kl,code,start,end):
-
-        ext_table = {"d":"day","w":"week","m":"month"}
-        ext = ext_table.get(self.freq,"day")
-
-        name = Kl.stockdict[code]['name']
-        # 1. 从服务器下载数据
-        jsondata = self._read_server_data(code,start,end,json=True)
-
-        # 2. 保存到本地硬盘，
-        content = json.dumps([code,name,jsondata])
-        f1 = open(get_path("~/.klang/"+ ext +"/" + code+ ext + ".json"),"w+")
-        f1.write(content)
-        f1.close()
-
-        # 3. 升级更新文件
-        if  stockupdate.get(code,None) is None:
-            stockupdate[code] = {}
-
-        stockupdate[code][ext] = get_date(0)
-        save_stockupdate()
-        return jsondata
-
-    def get_data(self,Kl,code,start,end):
-        df = self._read_file_data(code)
-        if len(df) < 1:
-            jsondata = self.down_and_save (Kl,code,start,end)
-            df = json_to_df(jsondata,setindex=True)
-
-        return df
-
-    # 下载数据 更新数据，只做差异补偿
-
-    def update_data(self,Kl,code,check=True):
-        ext_table = {"d":"day","w":"week","m":"month"}
-        ext = ext_table.get(self.freq,"day")
-
-        if not os.path.exists(get_path("~/.klang/"+ext+"/" +code+ ext + ".json")):
-            return self.get_data(Kl,code,Kl.start_date,Kl.end_date)
-        
-        today = get_date(0)
-
-        name = Kl.stockdict[code]['name']
-        lastday = stockupdate.get(code,{}).get(ext,'2021-01-01')
-        if lastday == today and check:
-            return 
-        jsondata = self._read_server_data(code,lastday,Kl.end_date,json=True,append=True)
-        jsondata = self.append_data(code,jsondata)
-
-        content = json.dumps([code,name,jsondata])
-        f1 = open(get_path("~/.klang/"+ ext +"/" +code+ ext+ ".json"),"w+")
-        f1.write(content)
-        f1.close()
-
-        if  stockupdate.get(code,None) is None:
-            stockupdate[code] = {}
-
-        stockupdate[code][ext] = get_date(0)
-        
-
-# 下载所有的股票
-def downloadstockdata(Kl):
-
-    if Kl.canUpdate == False: #仅仅一个server能下载，其他server直接返回
-        return
-    bar = Bar('Downloading ',max=len(Kl.stocklist))
-    bar.is_tty = lambda :True
-    today = get_date(0)
-    for stock in Kl.stocklist:
-
-        code = stock['code']
-        day_data.down_and_save(Kl,code,Kl.start_date,Kl.end_date)
-        week_data.down_and_save(Kl,code,Kl.start_date,Kl.end_date)
-        month_data.down_and_save(Kl,code,Kl.start_date,Kl.end_date)
-
-        save_stockupdate()
-        bar.next()
-    bar.finish()
-    save_stockupdate()
-
-# 更新所有的股票
-# 更新仅仅更新日K，下载是下载日，月，周
-def updatestockdata(Kl,check=True):
-    if Kl.canUpdate == False: #仅仅一个server更新，其他server直接返回
-        return
-
-    bar = Bar('Downloading ',max=len(Kl.stocklist))
-    bar.is_tty = lambda :True
-    today = get_date(0)
-    for stock in Kl.stocklist:
-        code = stock['code']
-
-        day_data.update_data(Kl,code,check)
-        #week_data.update_data(Kl,code,check)
-        #month_data.update_data(Kl,code,chedk)
-        save_stockupdate()
-        bar.next()
-    bar.finish()
-    save_stockupdate()
-
-
-
-#
-# 从网上下载数据或者从文件加载股票数据    
-# 加载后数据存放在(Kl.df_all)
-#
-def get_all_data(Kl):    
-    updatestockdata(Kl,check=True) # 检查更新和追加数据
-
-def add_factor(name,order):
-    result = kapi.get_factor(name).json()
-    for i in result:
-        code = i['code']
-        index = stockindex.get(code,None)
-        if index is None:
-            continue        
-        stocklist[index][name] = i['value'].split(",")[0]
-    # tdxgn 有多个字段用 ',' 分开，所以要处理
-
-def updatestocklist(stname=filename_sl):
-    global stocklist
-    listjson = kapi.get_stocklist().json()
-    index = 0
-    stocklist = []
-
-    for i in listjson:
-        stocklist.append({"code":i['code'],"name":i['name'],"df":None})
-        stockindex[i['code']] = index
-        index += 1
-
-    print("正在加载因子:筹码，板块 ")
-    add_factor("SCR",2)
-    add_factor("tdxbk",3)
-    add_factor("tdxgn",4)
-    print("因子加载完成")
-
-    df = pd.json_normalize(stocklist)
-    
-    # 结果集输出到csv文件
-    df.to_csv(stname, index=False,columns=['code','name','SCR','tdxbk','tdxgn'])  
-
-
-def print_data_setup_hint():
-    """本地数据缺失时给出明确提示：import 不联网，需手动更新。"""
-    line = "=" * 62
-    print("\n" + line)
-    print("[Klang] 本地股票列表不存在：" + filename_sl)
-    print("[Klang] import 不会联网更新数据，请先手动下载数据到 " + data_path + " ：")
-    print("[Klang]   方式一（数据包）：在项目根目录执行  python3 tools/download.py")
-    print("[Klang]   方式二（API）  ：在项目根目录执行  python3 update_data.py")
-    print("[Klang] 注意：当前服务端 data.klang.org.cn 返回 502、数据包链接返回 404，")
-    print("[Klang]       两个入口暂时都取不到数据，需等服务端恢复后再执行。")
-    print("[Klang] 数据就绪后重新 import Klang 即可，无需重启 Python 以外的操作。")
-    print(line + "\n")
-
-
-def init_stock_list(Kl,offset=0):
-    global stocklist,stockupdate
+def init_stock_list(Kl, offset=0):
+    """从本地 CSV 加载股票列表；缺失时提示，不联网下载。"""
+    global stocklist, stockupdate
 
     if not os.path.exists(filename_sl):
-        # 缺本地列表时不再隐式联网下载（老接口已失效，且 import 不应触发更新）
-        print_data_setup_hint()
+        print_data_status()
         stocklist = []
         return stocklist
 
-    stocklist  = []
-    print("正在从文件",filename_sl,"加载股票列表")
-    stocklines = open(filename_sl,encoding='utf-8').readlines()
-    stocklines = stocklines[1:] #删除第一行
+    stocklist = []
+    print("正在从文件", filename_sl, "加载股票列表")
+    with open(filename_sl, encoding="utf-8") as f:
+        stocklines = f.readlines()
+    stocklines = stocklines[1:]  # 删除表头
 
-    index = 0 
-    for i in stocklines:
-        i = i.strip()
-        code,name,scr,tdxbk,tdxgn = i.split(',')
-        stocklist.append({"code":code,"name":name,"df":None,'SCR':scr,"tdxbk":tdxbk,"tdxgn":tdxgn})
-        Kl.stockdict[code]  = {"name":name,'SCR':scr,"tdxbk":tdxbk,"tdxgn":tdxgn,"index":index}
+    index = 0
+    for line in stocklines:
+        line = line.strip()
+        if not line:
+            continue
+        parts = line.split(",")
+        if len(parts) < 2:
+            continue
+        code, name = parts[0], parts[1]
+        scr = parts[2] if len(parts) > 2 else "50"
+        tdxbk = parts[3] if len(parts) > 3 else ""
+        tdxgn = parts[4] if len(parts) > 4 else ""
+        stocklist.append({"code": code, "name": name, "df": None,
+                          "SCR": scr, "tdxbk": tdxbk, "tdxgn": tdxgn})
+        Kl.stockdict[code] = {"name": name, "SCR": scr, "tdxbk": tdxbk,
+                              "tdxgn": tdxgn, "index": index}
         stockindex[code] = index
         index += 1
 
-    #
-    # 获取股票 更新列表
-    #
+    # 更新记录（只用于提示，不触发下载）
     if os.path.exists(file_updata_list):
         try:
-            f = open(file_updata_list)
-            stockupdate = json.load(f)
-            f.close()
-        except: #存在列表保存不完整的情况
+            with open(file_updata_list) as f:
+                stockupdate = json.load(f)
+        except Exception:
             pass
 
+    print_data_status()
     return stocklist
 
-day_data   = GetData(freq="d")
-week_data  = GetData(freq="w")
-month_data = GetData(freq="m")
 
+# ---------------------------------------------------------------------------
+# K 线数据（只读本地）
+# ---------------------------------------------------------------------------
+def json_to_df(json_data, setindex=False):
+    df = pd.json_normalize(json_data)
+    if len(df) < 1:
+        return []
+
+    df = df[df["volume"] > 0.0]
+    if len(df) < 1:
+        return []
+
+    datas = df.sort_values(by="date", ascending=True)
+    if setindex is True:
+        datas["datetime"] = datas["date"]
+        datas = datas.set_index("date")
+    close = datas["close"].iloc[-1]
+    volume = datas["volume"].iloc[-1]
+    turn = datas["turn"].iloc[-1]
+    try:
+        datas["hqltsz"] = float(volume) * float(close) / float(turn) / 1000000
+    except Exception:
+        datas["hqltsz"] = 0.0001
+    datas.rename(columns={"volume": "vol"}, inplace=True)
+    return datas
+
+
+class GetData:
+    """只从本地缓存读取 K 线，不联网。"""
+
+    def __init__(self, freq="d"):
+        self.freq = self._name(freq)
+
+    def _name(self, _name):
+        name_table = {"day": "d", "d": "d", "week": "w", "w": "w",
+                      "month": "m", "m": "m"}
+        self.freq = name_table.get(_name, "d")
+        return self.freq
+
+    def _read_file_data(self, code):
+        ext_table = {"d": "day", "w": "week", "m": "month"}
+        ext = ext_table.get(self.freq, "day")
+        path = get_path("~/.klang/" + ext + "/" + code + ext + ".json")
+        if not os.path.exists(path):
+            return pd.DataFrame([])
+
+        try:
+            with open(path, encoding="utf-8") as f:
+                obj = json.load(f)
+            rows = obj[2] if isinstance(obj, list) and len(obj) >= 3 else []
+            df = json_to_df(rows)
+            if not isinstance(df, pd.DataFrame) or len(df) < 1:
+                return pd.DataFrame([])
+            df["datetime"] = df["date"]
+            df = df.set_index("date")
+            return df
+        except Exception:
+            return pd.DataFrame([])
+
+    def get_data(self, Kl, code, start, end):
+        # 纯本地：文件不存在或损坏时返回空 DataFrame，不联网补数据
+        return self._read_file_data(code)
+
+
+day_data = GetData(freq="d")
+week_data = GetData(freq="w")
+month_data = GetData(freq="m")

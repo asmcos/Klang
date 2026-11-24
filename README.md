@@ -61,15 +61,17 @@ python3 setup.py install
 
 ## 下载数据, 也可以直接使用不下载数据，下载数据约10分钟。
 * 可以跳过，直接运行
-* 下载数据有2种方法，第一种是直接下载压缩包，第二种是使用API下载
+* 数据更新通过 eltdx（通达信行情）下载，需先安装：`pip3 install eltdx`
 
-* 方法一、 推荐，适用于网络速一般的场景，只有日K
 ```
-python3 tools/download.py 
-```
-* 方法二、 通过API下载 首次安装必须使用update_data.py来下载日，周，月数据
-```
-python3 update_data.py
+# 增量更新日K
+python3 tools/eltdx_updater.py
+
+# 全量下载日/周/月K线
+python3 tools/eltdx_updater.py --all
+
+# 只更新指定股票
+python3 tools/eltdx_updater.py --codes sh.600000 sz.000001
 ```
 
 

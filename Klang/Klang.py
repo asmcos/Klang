@@ -79,22 +79,23 @@ class Klang():
     
     """
     获取所有的A股的日K数据
+
+    数据更新已迁到 tools/eltdx_updater.py（基于 eltdx），本方法仅保留
+    为兼容旧调用：它只刷新当前日期区间，不联网下载。
     """
     def get_all_data(self):
         self.dfend = get_date(0)
         self.end_date = get_date(0)
-        self.data_engine.get_all_data(self)   
 
-    # 重新下载所有的数据
+    # 重新下载所有的数据 — 转交给 eltdx 更新器
     def downloadall(self):
-        self.data_engine.updatestocklist() #下载列表到文件
-        self.stocklist = self.data_engine.init_stock_list(self) #加载
+        from tools.eltdx_updater import update_all
+        update_all(self, incremental=False)
 
-        self.data_engine.downloadstockdata(self)
-
-    # 下载当前数据
+    # 增量更新数据 — 转交给 eltdx 更新器
     def updateall(self):
-        self.data_engine.updatestockdata(self,check=False)
+        from tools.eltdx_updater import update_all
+        update_all(self, incremental=True)
 
 Kl = Klang()
 
@@ -108,15 +109,22 @@ def Klang_init():
     if not Kl.stocklist:
         return
 
-    Kl.cur_code = Kl.stocklist[0]['code']
-    Kl.cur_name = Kl.stocklist[0]['name']
-    Kl.date(start='2021-01-01')
+    # 默认股票取本地日K存在的第一只；一只都没有就不加载，避免对空数据
+    # 调 Kl.date() 报 TypeError。import 期只读本地、不联网。
+    day_dir = datakl.data_path + "/day/"
+    cur = None
+    for item in Kl.stocklist:
+        if os.path.exists(datakl.get_path(day_dir + item["code"] + "day.json")):
+            cur = item
+            break
+    if cur is None:
+        print("[Klang] 本地没有任何日K数据，未加载默认股票。")
+        print("[Klang] 更新请运行：python3 tools/eltdx_updater.py")
+        return
 
-    # import 期只读本地：默认股票的本地日K存在才加载。
-    # 不在 import 时联网下载、也不启动后台更新线程；
-    # 更新由 update_data.py / Kl.downloadall() / Kl.updateall() 显式触发。
-    day_file = datakl.get_path(datakl.data_path + "/day/" + Kl.cur_code + "day.json")
-    if os.path.exists(day_file):
-        Kl.code(Kl.cur_code)
+    Kl.cur_code = cur["code"]
+    Kl.cur_name = cur["name"]
+    Kl.date(start='2021-01-01')
+    Kl.code(Kl.cur_code)
 
     

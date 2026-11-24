@@ -5,3 +5,4 @@ ply
 progress
 eventlet
 python-socketio[client]
+eltdx
