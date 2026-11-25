@@ -87,6 +87,9 @@ cp SKILL.md ~/.workbuddy/skills/klang-quant/SKILL.md
 
 装好之后可以直接对助手说「用 Klang 找今天涨停的股票」「用 Klang 算一下 XX 的均线」。
 
+**给 agent 的最短路径**：先读 [examples/agent_formulas.md](examples/agent_formulas.md)（五份可复制公式 + 四条硬约束），
+再跑 `python3 examples/formula_examples.py --list` 验证环境。这份样例脚本可直接运行，比从 README 猜语法快得多。
+
 现成的选股脚本：
 
 ```bash
@@ -251,7 +254,11 @@ python3 setup install
 
 ```
 
-浏览 online.html 即可运算公式了
+管理端同时也提供网页，打开 <http://127.0.0.1:9088/studio>（新界面，推荐）或 `/online.html`（旧界面）。
+新界面带公式样例、全市场/单票运行、实时结果表格、过滤与 CSV 导出；详细的 Socket.IO 协议和文件职责见 [server/README.md](server/README.md)。
+
+当前在用的一直是 `kws_manager.py` + `kws_server.py`（Socket.IO）。改用 socket.io 之前的原生 WebSocket 旧版 `*_ws.py` 已于 2026-11-25 删除，需要时可查 git 历史。
+
 ## 支持中文编程
 
 ```
@@ -274,6 +281,7 @@ python3 setup install
 ```
 
 # 更新
+* 2026.11.25 新增 agent 公式样例与可执行脚本；server 配套新网页 `/studio`（公式样例、单票/全市场运行、结果表格与 CSV 导出），修复计算节点路径、完成信号与错误回传；新增 `server/server.log` 落盘日志；删除原生 WebSocket 旧版 `*_ws.py`
 * 2026.11.24 数据层重构：import 不再联网，只读本地缓存；数据下载改用 eltdx（通达信）；
   新增 tools/limit_up.py 涨停扫描与 SKILL.md（AI 助手使用指南）
 * 2022.10.19 server 换成socket.io通讯协议
@@ -287,12 +295,16 @@ python3 setup install
 tree server/ examples/ Klang
 server/
 ├── __init__.py
-├── kws_manager.py
-├── kws_manager_ws.py
-├── kws_server.py
-├── kws_server_ws.py
-└── online.html
+├── README.md              # 协议、网页界面与文件职责
+├── kws_manager.py         # 当前在用：Socket.IO 管理端 + 静态网页
+├── kws_server.py          # 当前在用：计算节点
+├── klang_studio.html      # 新网页界面（/studio）
+├── online.html            # 旧网页，仍可用
+├── vendor/
+│   └── socket.io.min.js   # 本地 socket.io 客户端，离线可用
 examples/
+├── agent_formulas.md      # 给 AI agent 的公式样例与硬约束
+├── formula_examples.py    # 可直接运行的公式样例
 ├── test_feature.py
 ├── testparse.py
 ├── test.py

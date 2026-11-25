@@ -29,22 +29,33 @@ class Klang():
 
 
 
+    @staticmethod
+    def _slice_by_date(df, start, end):
+        """按日期区间切片；无数据（空表）时原样返回，避免字符串索引崩溃。
+
+        新股在股票列表里但没有本地 K 线文件时，get_data 返回结构完整的空表，
+        此时跳过切片；正常数据 index 是日期字符串（Index），切片照常。
+        """
+        if df is None or len(df) == 0:
+            return df
+        return df[start:end]
+
     def get_day(self):
         code = self.cur_code 
         df = self.data_engine.day_data.get_data(self,code,self.start_date,self.end_date)
-        df = df[self.dfstart:self.dfend] 
+        df = self._slice_by_date(df, self.dfstart, self.dfend)
         self.day_df = df
 
     def get_week(self):
         code = self.cur_code 
         wdf = self.data_engine.week_data.get_data(self,code,self.start_date,self.end_date)
-        wdf = wdf[self.dfstart:self.dfend] 
+        wdf = self._slice_by_date(wdf, self.dfstart, self.dfend)
         self.week_df = wdf
 
     def get_month(self):
         code = self.cur_code   
         mdf = self.data_engine.month_data.get_data(self,code,self.start_date,self.end_date)
-        mdf = mdf[self.dfstart:self.dfend] 
+        mdf = self._slice_by_date(mdf, self.dfstart, self.dfend)
         self.month_df = mdf 
 
     #每次加载的时候可以设置并且获取部分数据

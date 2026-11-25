@@ -20,6 +20,9 @@ Klang 是股票 K 线编程语言，特点是**中文写公式**（`今日收盘
 
 本技能固化了三件事：**把数据准备好**（本地缓存，不联网也能用）、**三种交互方式怎么写**（Python API / 中文公式 / 网页服务）、**实测踩过的坑**。
 
+> **给 agent 的最短路径**：先读 [`examples/agent_formulas.md`](examples/agent_formulas.md)（五份可复制公式 + 四条硬约束），
+> 再跑 `python3 examples/formula_examples.py --list` 验证环境。别从 README 的长文开始猜语法。
+
 Klang 仓库：<https://github.com/asmcos/Klang> ｜ 问答社区：<https://forum.klang.org.cn>
 
 ## 何时使用
@@ -151,16 +154,34 @@ endp
 中文公式还支持：`MA(C,60)`、`CROSS(C,MA(C,60))`、`:=` 赋值、`if/else`、`for/range`、
 `print(...)`、以及 `kloop`/`endp`/`kstop`。
 
+**非 `kloop` 脚本要写分号**（`code('sh.600000');\nma20=MA(C,20);`），
+`kloop` 块内靠换行即可。这是 `code()` 单票调试最常见的语法错误。
+
+### 官方公式样例（agent 直接抄）
+
+```bash
+python3 examples/formula_examples.py --list                       # 5 份样例
+python3 examples/formula_examples.py --show 涨停                  # 打印公式
+python3 examples/formula_examples.py --example 均线多头 --limit 200
+python3 examples/formula_examples.py --example MACD金叉            # 全市场
+```
+
+完整说明与报错对照表在 [`examples/agent_formulas.md`](examples/agent_formulas.md)。
+
 ## 交互方式三：网页选股服务
 
 ```bash
-python3 server/kws_manager.py     # socketio 管理端（端口 9088）
-python3 server/kws_server.py      # 计算节点
+python3 server/kws_manager.py     # Socket.IO 管理端（端口 9088，同时提供网页）
+python3 server/kws_server.py      # 计算节点（另一个终端）
 ```
 
-两个都要起，然后打开 `server/online.html`（或线上 <https://klang.org.cn/online.html>）。
+浏览器打开 <http://127.0.0.1:9088/studio>；旧的 `server/online.html` 仍可用（需另起静态服务）。
 manager 把全 A 股扫描任务分片派发到多个 server 并行计算，网页端写公式、收结果。
 单机调试用前两种方式就够，分布式才需要起服务。
+
+**别用错文件**：当前在用的是 `kws_manager.py` + `kws_server.py` + `klang_studio.html`（Socket.IO）；
+2022-10 换协议前的原生 WebSocket 旧版 `*_ws.py` 已于 2026-11-25 删除（需要时查 git 历史），
+requirements.txt 里也没有 `websockets` 依赖。协议细节见 `server/README.md`。
 
 ---
 
@@ -205,6 +226,8 @@ python3 tools/limit_up.py --limit 200   # 只扫前 200 只（调试）
 | 成交量比别家的数据小 100 倍 | 通达信接口的 `volume_lots` 日K 是「手」（×100=股），周/月是「百手」（×10000=股） | 用 `成交额 ÷ 均价` 反推校验 |
 | 股票名字变成代码（如 `sh.600000`） | 名称表没取到 | 名称来源优先级：eltdx 名称表 → 日K 文件 → 旧 CSV |
 | 公式里 `round()` 报 NoneType 不可调用 | 公式只能调 python 全局里的函数 | 在 python 侧定义好，或改用 `int(x*100)/100` |
+| `code('sh.600000')` 单票脚本报 `Syntax error in input!` | 非 `kloop` 脚本语句缺 `;` | 写成 `code('sh.600000');\nma20=MA(C,20);` |
+| 打开 9088 只有 Socket.IO 握手、没有页面 | 老版本 manager 不提供静态文件 | 用更新后的 manager，访问 `/studio` |
 
 ## 别做的事
 

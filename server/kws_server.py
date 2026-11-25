@@ -1,13 +1,22 @@
-import trio
 import socketio
 from threading import Lock
 import logging
-logging.basicConfig()
+from logging.handlers import RotatingFileHandler
 
 import threading
 import sys,os
 
-sys.path.append(os.path.expanduser(sys.path[0] + "/../"))
+# 日志落盘：tail -f server/server.log
+LOG_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'server.log')
+logger = logging.getLogger('klang.server')
+logger.setLevel(logging.INFO)
+if not logger.handlers:
+    _h = RotatingFileHandler(LOG_FILE, maxBytes=2 * 1024 * 1024, backupCount=3, encoding='utf-8')
+    _h.setFormatter(logging.Formatter('%(asctime)s %(levelname)s %(message)s'))
+    logger.addHandler(_h)
+
+# 必须用本仓库源码；append 会被 site-packages 里的旧 Klang egg 抢先，import 阶段就联网崩掉
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 ######################klang #######################
 from Klang.lang import kparser,setPY,Kexec
@@ -126,7 +135,9 @@ def DISPLAY(value):
 
 def execute(data):
     global user_id 
-    #print(data)
+    logger.info('执行分片 user=%s loop=%s 股票数=%d 公式=%s', data.get("user_id"),
+                bool(data.get("loop")), len(data.get("stocklist", [])),
+                repr(data.get("content", ""))[:150])
     
     # 1. 判断是否加loop循环之行
     # 2. loop == False, manager 处理循环
@@ -138,19 +149,37 @@ def execute(data):
     # 2. 执行 busy lock 执行锁
     mutex.acquire()
     user_id = data["user_id"]
+    err_count = 0
     for stockcode in data ["stocklist"]:
-        content1 = "code('" + stockcode["code"] + "')\n;" + content
+        # 先加载该股票，跳过无本地数据的新股（列表里有代码但没 K 线文件）。
+        # 否则公式里的 MA(C,N)[-1] 会对空序列抛 index out of bounds，污染网页错误提示。
         try:
-            Kexec(content1)
-        except:
-            pass
+            code(stockcode["code"])
+        except Exception as exc:
+            logger.warning('跳过无数据股票 code=%s: %s', stockcode["code"], exc)
+            continue
+        if Kl.day_df is None or len(Kl.day_df) == 0:
+            logger.warning('跳过无数据股票 code=%s（本地无 K 线）', stockcode["code"])
+            continue
+
+        # 数据已加载，直接执行公式主体（不再重复注入 code()）
+        try:
+            Kexec(content)
+        except Exception as exc:
+            # 原来裸 except 直接吞掉，网页端只看到"跑完了但没结果"，这里记日志+回传前 3 条错误
+            err_count += 1
+            logger.error('Kexec 失败 code=%s: %s', stockcode["code"], exc)
+            if err_count <= 3:
+                message = {"retcode":"ERROR","name":"","code":stockcode["code"],\
+                    "value":str(exc),"user_id":user_id}
+                sio.emit("user_ret",message,namespace="/Kserver")
     # unlock
     mutex.release()   #之行完成，解锁，发通知给web用户
     #print('执行完成')
 
     # 3. 执行完成
     
-    sio.emit('exec_done',{"user_id":user_id},namespace="/Kserver")
+    sio.emit('exec_done',{"user_id":user_id,"single":bool(data.get("single"))},namespace="/Kserver")
     user_id = ""
 
 def get_stock_list(data):
@@ -169,6 +198,7 @@ class KserverNamespace(socketio.ClientNamespace):
 
     def on_disconnect(self):
         print("disconnected from server")
+        logger.warning('与管理端断开连接，退出')
         os._exit(1) #由守护进程解决重启问题
 
     def on_loop_list_event(self,data):

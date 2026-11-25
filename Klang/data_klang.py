@@ -208,12 +208,21 @@ class GetData:
         self.freq = name_table.get(_name, "d")
         return self.freq
 
+    # 无数据股票（新股在列表里但没有本地 K 线文件）返回结构完整的空表，
+    # 保证 MA(C,N) 等公式能算出空序列、[-1] 取不到值而静默跳过，不抛 KeyError。
+    EMPTY_COLUMNS = ["open", "close", "high", "low", "vol", "turn",
+                     "amount", "hqltsz", "datetime"]
+
+    @classmethod
+    def _empty_df(cls):
+        return pd.DataFrame(columns=cls.EMPTY_COLUMNS)
+
     def _read_file_data(self, code):
         ext_table = {"d": "day", "w": "week", "m": "month"}
         ext = ext_table.get(self.freq, "day")
         path = get_path("~/.klang/" + ext + "/" + code + ext + ".json")
         if not os.path.exists(path):
-            return pd.DataFrame([])
+            return self._empty_df()
 
         try:
             with open(path, encoding="utf-8") as f:
@@ -221,12 +230,12 @@ class GetData:
             rows = obj[2] if isinstance(obj, list) and len(obj) >= 3 else []
             df = json_to_df(rows)
             if not isinstance(df, pd.DataFrame) or len(df) < 1:
-                return pd.DataFrame([])
+                return self._empty_df()
             df["datetime"] = df["date"]
             df = df.set_index("date")
             return df
         except Exception:
-            return pd.DataFrame([])
+            return self._empty_df()
 
     def get_data(self, Kl, code, start, end):
         # 纯本地：文件不存在或损坏时返回空 DataFrame，不联网补数据

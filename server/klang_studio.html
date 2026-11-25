@@ -1,0 +1,467 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Klang Studio · 中文公式在线选股</title>
+<style>
+  :root {
+    --bg: #f5f7fa;
+    --panel: #ffffff;
+    --ink: #1f2933;
+    --muted: #64748b;
+    --line: #e2e8f0;
+    --brand: #2563eb;
+    --brand-dark: #1d4ed8;
+    --accent: #0f766e;
+    --warn: #b45309;
+    --danger: #b91c1c;
+    --ok: #15803d;
+    --code-bg: #0f172a;
+    --code-ink: #e2e8f0;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    background: var(--bg);
+    color: var(--ink);
+    font-size: 14px;
+  }
+  header {
+    background: var(--panel);
+    border-bottom: 1px solid var(--line);
+    padding: 14px 24px;
+    display: flex;
+    align-items: center;
+    gap: 18px;
+    flex-wrap: wrap;
+  }
+  .brand { display: flex; align-items: baseline; gap: 10px; }
+  .brand b { font-size: 19px; letter-spacing: .3px; }
+  .brand span { color: var(--muted); font-size: 12px; }
+  .status { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-left: auto; }
+  .pill {
+    display: inline-flex; align-items: center; gap: 6px;
+    border: 1px solid var(--line); border-radius: 999px;
+    padding: 4px 11px; background: #f8fafc; color: var(--muted); font-size: 12px;
+  }
+  .pill b { color: var(--ink); font-weight: 600; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: #94a3b8; }
+  .pill.on .dot { background: var(--ok); }
+  .pill.off .dot { background: var(--danger); }
+  main {
+    max-width: 1440px; margin: 22px auto; padding: 0 20px 40px;
+    display: grid; grid-template-columns: minmax(380px, 5fr) minmax(420px, 7fr);
+    gap: 20px; align-items: start;
+  }
+  .card {
+    background: var(--panel); border: 1px solid var(--line);
+    border-radius: 12px; padding: 18px;
+    box-shadow: 0 1px 2px rgba(15, 23, 42, .04);
+  }
+  .card h2 { margin: 0 0 14px; font-size: 15px; font-weight: 650; }
+  .card h2 small { font-weight: 400; color: var(--muted); margin-left: 8px; font-size: 12px; }
+  .row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  .sep { height: 1px; background: var(--line); margin: 16px 0; }
+  label { color: var(--muted); font-size: 12px; }
+  textarea, input[type="text"] {
+    width: 100%; border: 1px solid var(--line); border-radius: 8px;
+    padding: 10px 12px; font: 13px/1.6 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    color: var(--ink); background: #fff;
+  }
+  textarea { min-height: 300px; resize: vertical; tab-size: 4; }
+  textarea:focus, input:focus { outline: 2px solid rgba(37, 99, 235, .18); border-color: var(--brand); }
+  input[type="text"].code-input { width: 190px; }
+  button {
+    border: 1px solid var(--line); border-radius: 8px;
+    background: #fff; color: var(--ink); padding: 8px 14px;
+    font-size: 13px; cursor: pointer; transition: .15s ease;
+  }
+  button:hover:not(:disabled) { border-color: var(--brand); color: var(--brand); }
+  button:disabled { opacity: .5; cursor: not-allowed; }
+  button.primary { background: var(--brand); border-color: var(--brand); color: #fff; font-weight: 600; }
+  button.primary:hover:not(:disabled) { background: var(--brand-dark); color: #fff; }
+  button.ghost { background: #f8fafc; }
+  .mode { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+  .mode button { border: 0; border-radius: 0; padding: 7px 13px; background: #fff; }
+  .mode button.active { background: var(--brand); color: #fff; }
+  .examples { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 9px; margin-top: 12px; }
+  .example {
+    border: 1px solid var(--line); border-radius: 9px; padding: 10px;
+    background: #fbfdff; text-align: left;
+  }
+  .example b { display: block; font-size: 13px; margin-bottom: 4px; }
+  .example span { display: block; color: var(--muted); font-size: 11px; line-height: 1.5; }
+  .tips {
+    margin-top: 12px; padding: 11px 13px; border-left: 3px solid var(--accent);
+    background: #f0fdfa; color: #134e4a; font-size: 12px; line-height: 1.8; border-radius: 0 8px 8px 0;
+  }
+  .metrics { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 14px; }
+  .metric {
+    flex: 1; min-width: 110px; border: 1px solid var(--line); border-radius: 9px;
+    padding: 10px 13px; background: #f8fafc;
+  }
+  .metric span { display: block; color: var(--muted); font-size: 11px; }
+  .metric b { display: block; font-size: 20px; margin-top: 2px; font-variant-numeric: tabular-nums; }
+  .progress { height: 6px; border-radius: 999px; background: #e2e8f0; overflow: hidden; margin: 4px 0 14px; }
+  .progress i { display: block; height: 100%; width: 0; background: var(--brand); transition: width .3s ease; }
+  .toolbar { display: flex; gap: 9px; align-items: center; flex-wrap: wrap; margin-bottom: 12px; }
+  .toolbar input[type="text"] { width: 220px; }
+  .table-wrap { overflow: auto; max-height: 620px; border: 1px solid var(--line); border-radius: 9px; }
+  table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  th, td { padding: 8px 10px; text-align: left; white-space: nowrap; border-bottom: 1px solid #eef2f7; }
+  th { position: sticky; top: 0; background: #f8fafc; color: var(--muted); font-weight: 600; z-index: 1; }
+  tbody tr:hover { background: #f8fafc; }
+  td.val { font-weight: 600; color: var(--brand-dark); font-variant-numeric: tabular-nums; }
+  a { color: var(--brand); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  .empty { padding: 34px; text-align: center; color: var(--muted); }
+  #toasts { position: fixed; right: 20px; bottom: 20px; display: flex; flex-direction: column; gap: 8px; z-index: 20; }
+  .toast {
+    max-width: 380px; background: #fff; border: 1px solid var(--line); border-left: 4px solid var(--warn);
+    border-radius: 8px; padding: 11px 14px; box-shadow: 0 8px 24px rgba(15,23,42,.12); font-size: 12px;
+  }
+  .toast.err { border-left-color: var(--danger); }
+  footer { max-width: 1440px; margin: 0 auto; padding: 0 20px 30px; color: var(--muted); font-size: 12px; line-height: 1.8; }
+  kbd { background: #eef2f7; border: 1px solid var(--line); border-radius: 4px; padding: 1px 5px; font-size: 11px; }
+  @media (max-width: 980px) { main { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<header>
+  <div class="brand"><b>Klang Studio</b><span>中文公式在线选股 · Socket.IO</span></div>
+  <div class="status">
+    <span class="pill" id="connPill"><i class="dot"></i><span id="connText">未连接</span></span>
+    <span class="pill">计算节点 <b id="serverCount">0</b></span>
+    <span class="pill">在线用户 <b id="userCount">0</b></span>
+    <button class="ghost" id="reconnectBtn">重连</button>
+  </div>
+</header>
+
+<main>
+  <section class="card">
+    <h2>公式编辑器 <small>本地数据，不联网</small></h2>
+    <div class="row">
+      <div class="mode" id="mode">
+        <button type="button" class="active" data-mode="all">全市场扫描</button>
+        <button type="button" data-mode="single">单票调试</button>
+      </div>
+      <input type="text" class="code-input" id="codeInput" value="sh.600000" placeholder="sh.600000" hidden>
+      <label for="serverUrl">服务地址</label>
+      <input type="text" id="serverUrl" style="width:220px">
+    </div>
+    <div class="sep"></div>
+    <textarea id="editor" spellcheck="false"></textarea>
+    <div class="row" style="margin-top:12px">
+      <button class="primary" id="runBtn">运行公式</button>
+      <button id="clearBtn">清空</button>
+      <button id="copyBtn">复制公式</button>
+      <span style="color:var(--muted);font-size:12px" id="runHint">扫描全市场约 5000 只，请耐心等待</span>
+    </div>
+    <div class="tips">
+      规则速记：用到的序列要先 import；比较前取 <code>[-1]</code>；公式只能调 Python 全局里有的函数；
+      非 <code>kloop</code> 脚本每条语句要写 <code>;</code>。完整说明见 <code>examples/agent_formulas.md</code>。
+    </div>
+
+    <div class="sep"></div>
+    <h2>公式样例 <small>点一下载入编辑器</small></h2>
+    <div class="examples" id="examples"></div>
+  </section>
+
+  <section class="card">
+    <h2>运行结果 <small>实时接收 DISPLAY / PROGRESS</small></h2>
+    <div class="metrics">
+      <div class="metric"><span>命中</span><b id="hitCount">0</b></div>
+      <div class="metric"><span>进度事件</span><b id="progressCount">0</b></div>
+      <div class="metric"><span>错误</span><b id="errorCount">0</b></div>
+      <div class="metric"><span>耗时</span><b id="elapsed">-</b></div>
+    </div>
+    <div class="progress"><i id="progressBar"></i></div>
+    <div class="toolbar">
+      <input type="text" id="filter" placeholder="过滤名称 / 代码 / 板块">
+      <select id="sortBy">
+        <option value="index">按到达顺序</option>
+        <option value="value">按数值降序</option>
+        <option value="name">按名称</option>
+        <option value="code">按代码</option>
+      </select>
+      <button id="exportBtn">导出 CSV</button>
+      <button id="clearResultBtn">清空结果</button>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr>
+          <th>#</th><th>名称</th><th>代码</th><th>值</th><th>流通市值(亿)</th><th>板块</th><th>概念</th>
+        </tr></thead>
+        <tbody id="rows"><tr><td colspan="7" class="empty">还没有结果，先运行一个公式</td></tr></tbody>
+      </table>
+    </div>
+  </section>
+</main>
+
+<footer>
+  启动：<kbd>python3 server/kws_manager.py</kbd> + <kbd>python3 server/kws_server.py</kbd>；打开 <kbd>http://127.0.0.1:9088/studio</kbd>。
+  旧版 <code>online.html</code> 仍保留。协议与文件职责见 <code>server/README.md</code>。
+</footer>
+<div id="toasts"></div>
+
+<script src="/socket.io.min.js"></script>
+<script>
+(function () {
+  'use strict';
+
+  var EXAMPLES = [
+    { title: '涨停', desc: '涨幅超过阈值的股票（教学写法）', code:
+      '涨停线 = 9.8\n今日收盘 = C\n昨日收盘 = C[1]\n涨幅 = (今日收盘 - 昨日收盘) / 昨日收盘 * 100\nif 涨幅[-1] > 涨停线:\n    DISPLAY(涨幅[-1])' },
+    { title: '均线多头', desc: 'MA5 > MA10 > MA20', code:
+      'ma5 = MA(C, 5)\nma10 = MA(C, 10)\nma20 = MA(C, 20)\nif ma5[-1] > ma10[-1] and ma10[-1] > ma20[-1]:\n    DISPLAY(ma5[-1])' },
+    { title: '放量突破', desc: '站上 20 日线且 5 日均量放大', code:
+      'ma20 = MA(C, 20)\nvol5 = MA(V, 5)\nvol60 = MA(V, 60)\nif C[-1] > ma20[-1] and vol5[-1] > vol60[-1] * 1.5:\n    DISPLAY(C[-1])' },
+    { title: 'MACD金叉', desc: 'DIF 上穿 DEA', code:
+      'dif, dea, macd = MACD(C)\nif dif[-1] > dea[-1] and dif[-2] <= dea[-2]:\n    DISPLAY(dif[-1])' },
+    { title: '单票调试', desc: '单票模式自动注入 code()', code:
+      'ma20 = MA(C, 20)\nif C[-1] > ma20[-1]:\n    DISPLAY(C[-1])' }
+  ];
+
+  var $ = function (id) { return document.getElementById(id); };
+  var editor = $('editor'), codeInput = $('codeInput'), serverUrl = $('serverUrl');
+  var rows = [], tbody = $('rows'), running = false, startedAt = 0, mode = 'all', socket = null;
+  var hitCount = 0, progressCount = 0, errorCount = 0;
+  var watchdog = null;
+
+  function defaultUrl() {
+    var h = window.location.hostname;
+    if (!h || h === '127.0.0.1' || h === 'localhost' || window.location.protocol === 'file:') {
+      return 'http://127.0.0.1:9088/user';
+    }
+    return window.location.protocol + '//' + window.location.host + '/user';
+  }
+
+  function toast(text, isError) {
+    var box = $('toasts');
+    var el = document.createElement('div');
+    el.className = 'toast' + (isError ? ' err' : '');
+    el.textContent = text;
+    box.appendChild(el);
+    setTimeout(function () { el.remove(); }, isError ? 9000 : 4000);
+  }
+
+  function connect() {
+    if (socket) { socket.disconnect(); }
+    var url = serverUrl.value || defaultUrl();
+    socket = io(url, { reconnection: true, timeout: 6000 });
+    socket.on('connect', function () {
+      $('connPill').className = 'pill on';
+      $('connText').textContent = '已连接';
+      toast('已连接 ' + url);
+    });
+    socket.on('disconnect', function () {
+      $('connPill').className = 'pill off';
+      $('connText').textContent = '已断开';
+    });
+    socket.on('connect_error', function (err) {
+      $('connPill').className = 'pill off';
+      $('connText').textContent = '连接失败';
+      toast('连接失败：' + (err && err.message ? err.message : err), true);
+    });
+    socket.on('u_info', function (data) {
+      $('serverCount').textContent = (data.servers || []).length;
+      $('userCount').textContent = data.users || 0;
+    });
+    socket.on('u_ret', onResult);
+    socket.on('u_done', function () { finish('运行完成'); });
+    socket.on('error_event', function (data) {
+      toast((data && data.message) || '服务端返回错误', true);
+      finish('已终止');
+    });
+  }
+
+  function onResult(data) {
+    if (!data) { return; }
+    if (data.retcode === 'PROGRESS') {
+      progressCount += 1;
+      $('progressCount').textContent = progressCount;
+      $('progressBar').style.width = Math.min(95, progressCount * 2) + '%';
+      return;
+    }
+    if (data.retcode === 'ERROR') {
+      errorCount += 1;
+      $('errorCount').textContent = errorCount;
+      toast('公式错误 ' + (data.code || '') + '：' + data.value, true);
+      return;
+    }
+    if (data.retcode !== 'DISPLAY') { return; }
+    var value = String(data.value === undefined ? '' : data.value);
+    rows.push({
+      index: rows.length + 1,
+      name: data.name || '',
+      code: (data.code || '').replace('.', ''),
+      value: value,
+      num: parseFloat(value),
+      hqltsz: typeof data.hqltsz === 'number' ? data.hqltsz.toFixed(2) : '-',
+      tdxbk: data.tdxbk || '',
+      tdxgn: data.tdxgn || ''
+    });
+    hitCount = rows.length;
+    $('hitCount').textContent = hitCount;
+    $('progressBar').style.width = Math.min(90, 5 + hitCount * 2) + '%';
+    render();
+  }
+
+  function visibleRows() {
+    var q = $('filter').value.trim().toLowerCase();
+    var list = rows.filter(function (r) {
+      return !q || (r.name + ' ' + r.code + ' ' + r.tdxbk + ' ' + r.tdxgn).toLowerCase().indexOf(q) >= 0;
+    });
+    var sort = $('sortBy').value;
+    if (sort === 'value') { list = list.slice().sort(function (a, b) { return (b.num || 0) - (a.num || 0); }); }
+    if (sort === 'name') { list = list.slice().sort(function (a, b) { return a.name.localeCompare(b.name, 'zh'); }); }
+    if (sort === 'code') { list = list.slice().sort(function (a, b) { return a.code.localeCompare(b.code); }); }
+    return list;
+  }
+
+  function render() {
+    var list = visibleRows();
+    if (!list.length) {
+      tbody.innerHTML = '';
+      var tr = document.createElement('tr');
+      var td = document.createElement('td');
+      td.colSpan = 7; td.className = 'empty';
+      td.textContent = rows.length ? '没有符合过滤条件的结果' : '还没有结果，先运行一个公式';
+      tr.appendChild(td); tbody.appendChild(tr);
+      return;
+    }
+    var html = list.map(function (r, i) {
+      return '<tr>' +
+        '<td>' + (i + 1) + '</td>' +
+        '<td><a href="http://klang.org.cn/kline.html?code=' + encodeURIComponent(r.code) + '" target="_blank">' + esc(r.name) + '</a></td>' +
+        '<td><a href="https://gu.qq.com/' + encodeURIComponent(r.code) + '" target="_blank">' + esc(r.code) + '</a></td>' +
+        '<td class="val">' + esc(r.value) + '</td>' +
+        '<td>' + esc(r.hqltsz) + '</td><td>' + esc(r.tdxbk) + '</td><td>' + esc(r.tdxgn) + '</td>' +
+        '</tr>';
+    }).join('');
+    tbody.innerHTML = html;
+  }
+
+  function esc(s) {
+    return String(s).replace(/[&<>"']/g, function (c) {
+      return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];
+    });
+  }
+
+  function setRunning(on) {
+    running = on;
+    $('runBtn').disabled = on;
+    $('runBtn').textContent = on ? '运行中...' : '运行公式';
+    if (on) {
+      startedAt = Date.now();
+      clearInterval(watchdog);
+      watchdog = setInterval(function () {
+        $('elapsed').textContent = ((Date.now() - startedAt) / 1000).toFixed(0) + 's';
+      }, 500);
+    } else {
+      clearInterval(watchdog);
+      $('progressBar').style.width = '100%';
+    }
+  }
+
+  function finish(msg) {
+    if (!running) { return; }
+    setRunning(false);
+    toast(msg + '，命中 ' + hitCount + ' 只');
+  }
+
+  function run() {
+    var content = editor.value.trim();
+    if (!content) { toast('先写点公式，或从下面载入一个样例', true); return; }
+    if (!socket || !socket.connected) { toast('服务还没连上', true); return; }
+    rows = []; hitCount = 0; progressCount = 0; errorCount = 0;
+    $('hitCount').textContent = '0'; $('progressCount').textContent = '0';
+    $('errorCount').textContent = '0'; $('elapsed').textContent = '-';
+    $('progressBar').style.width = '4%';
+    render();
+    setRunning(true);
+    if (mode === 'single') {
+      var code = codeInput.value.trim();
+      if (!code) { setRunning(false); toast('单票模式要填股票代码', true); return; }
+      socket.emit('uexec_event', { content: content, loop: false, code: code });
+      $('runHint').textContent = '单票模式：' + code;
+    } else {
+      socket.emit('uexec_event', { content: content, loop: true });
+      $('runHint').textContent = '全市场扫描中...';
+    }
+    setTimeout(function () {
+      if (running) { setRunning(false); toast('超过 10 分钟未收到完成信号，请检查计算节点', true); }
+    }, 600000);
+  }
+
+  function buildExamples() {
+    var box = $('examples');
+    EXAMPLES.forEach(function (ex) {
+      var btn = document.createElement('button');
+      btn.className = 'example';
+      btn.innerHTML = '<b></b><span></span>';
+      btn.querySelector('b').textContent = ex.title;
+      btn.querySelector('span').textContent = ex.desc;
+      btn.onclick = function () {
+        editor.value = ex.code;
+        if (ex.title === '单票调试') {
+          document.querySelector('[data-mode="single"]').click();
+        } else {
+          document.querySelector('[data-mode="all"]').click();
+        }
+        toast('已载入「' + ex.title + '」');
+      };
+      box.appendChild(btn);
+    });
+  }
+
+  document.querySelectorAll('#mode button').forEach(function (btn) {
+    btn.onclick = function () {
+      document.querySelectorAll('#mode button').forEach(function (b) { b.classList.remove('active'); });
+      btn.classList.add('active');
+      mode = btn.getAttribute('data-mode');
+      codeInput.hidden = mode !== 'single';
+      $('runHint').textContent = mode === 'single' ? '只跑一只股票，秒级返回' : '扫描全市场约 5000 只，请耐心等待';
+    };
+  });
+
+  $('runBtn').onclick = run;
+  $('reconnectBtn').onclick = connect;
+  $('clearBtn').onclick = function () { editor.value = ''; };
+  $('clearResultBtn').onclick = function () {
+    rows = []; hitCount = 0; render();
+    $('hitCount').textContent = '0'; $('progressCount').textContent = '0'; $('errorCount').textContent = '0';
+  };
+  $('copyBtn').onclick = function () {
+    navigator.clipboard.writeText(editor.value).then(function () { toast('公式已复制'); },
+      function () { toast('复制失败，请手动选中', true); });
+  };
+  $('filter').oninput = render;
+  $('sortBy').onchange = render;
+  $('exportBtn').onclick = function () {
+    var list = visibleRows();
+    if (!list.length) { toast('没有可导出的结果', true); return; }
+    var head = ['序号','名称','代码','值','流通市值(亿)','板块','概念'];
+    var lines = [head.join(',')].concat(list.map(function (r) {
+      return [r.index, r.name, r.code, r.value, r.hqltsz, r.tdxbk, r.tdxgn]
+        .map(function (x) { return '"' + String(x).replace(/"/g, '""') + '"'; }).join(',');
+    }));
+    var blob = new Blob(['\ufeff' + lines.join('\n')], { type: 'text/csv;charset=utf-8' });
+    var a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'klang-result-' + new Date().toISOString().slice(0, 10) + '.csv';
+    a.click();
+    URL.revokeObjectURL(a.href);
+  };
+
+  serverUrl.value = defaultUrl();
+  editor.value = EXAMPLES[1].code;
+  buildExamples();
+  render();
+  connect();
+})();
+</script>
+</body>
+</html>
