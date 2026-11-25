@@ -175,7 +175,7 @@ python3 server/kws_manager.py     # Socket.IO 管理端（端口 9088，同时�
 python3 server/kws_server.py      # 计算节点（另一个终端）
 ```
 
-浏览器打开 <http://127.0.0.1:9088/studio>；旧的 `server/online.html` 仍可用（需另起静态服务）。
+浏览器打开 <http://127.0.0.1:9088/studio>；旧的 `/online.html` 由 manager 一并提供，无需另起静态服务。
 manager 把全 A 股扫描任务分片派发到多个 server 并行计算，网页端写公式、收结果。
 单机调试用前两种方式就够，分布式才需要起服务。
 

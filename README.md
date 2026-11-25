@@ -1,11 +1,17 @@
 # Klang
 stock K-line language 
 
-Klang 是Kline语言,即股票语言,支持方便快捷的股票编程,可以轻松搞定股票公式
+Klang 是一门**股票 K 线编程语言**，专注快捷的股票筛选与公式编写：一条公式就能完成选股、择时和形态识别，是股票编程与量化交易的趁手工具。
 
-是股票编程和量化交易的必备工具
+它最大的亮点是**支持中文编程**——`今日收盘 > 昨日收盘` 这样的表达式本身就是合法代码，一看就懂，完整例子见文末。
 
-Klang 最大的亮点是支持中文编程,可以看最后的完整例子
+## Klang 拥抱 AI
+
+在 AI 兴起的今天，Klang 选择拥抱 AI。你不必从头学语法：只要把仓库里的 [SKILL.md](SKILL.md) 交给 AI 助手，它就能掌握 Klang 的数据准备、公式写法与工具链。之后在 agent 里直接用自然语言下指令：
+
+> 请帮我找出今天涨停的、倍量的股票。
+
+agent 会自动调用 Klang 完成行情扫描、公式计算，并把结果整理好交给你。这套流程已在 **WorkBuddy** 中测试通过。
 
 任何问题欢迎访问[问答社区](https://forum.klang.org.cn)
 
@@ -17,12 +23,19 @@ Klang 最大的亮点是支持中文编程,可以看最后的完整例子
 
 # 在线试用
 * 内置中文编程公式
-你可以在线体验 Klang 编程, 无需安装,网站内置了多个选股公式 [Online](https://klang.org.cn/online.html)
+启动本地服务后打开 <http://127.0.0.1:9088/studio>，无需安装额外前端，页面内置了多个选股公式，可直接运行测试。
+
+```bash
+python3 server/kws_manager.py   # 终端 1：管理端 + 网页（端口 9088）
+python3 server/kws_server.py    # 终端 2：计算节点（可再开 5 个并行加速）
+```
+
+公网旧入口仍为 <https://klang.org.cn/online.html>；本地旧界面为 `/online.html`。详见 [server/README.md](server/README.md)。
 
 
 ## Klang 是股票K线形态语言,基于 python3
 * 语言解释器采用 python的 ply库，他采用了flex，yacc语法的实现
-* 股票数据来源 baostock,zhanluejia
+* 股票数据来源 eltdx（通达信），只读本地缓存；数据下载见 tools/
 * 支持 同花顺、通达信、文华财经等的公式, 感谢funcat 移植到了 Python 版本
 * Klang 语言是基于Python语法拓展了部分自己的语法，并且编写了快捷的股票公式 
 * 支持网页直接使用,交互方便
