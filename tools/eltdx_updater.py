@@ -28,6 +28,96 @@ SLEEP = 0.02               # 每只股票之间的间隔，避免打太快
 
 PERIODS = {"day": "day", "week": "week", "month": "month"}
 
+# 更新记录：由本脚本独占写入，网页只读。放在 ~/.klang/ 下与数据同目录。
+UPDATE_RECORD = os.path.join(DATA_PATH, "update_record.json")
+KIND_LABELS = {"day": "更新日 K", "all": "日/周/月全量", "list": "重拉股票列表"}
+MAX_HISTORY = 20
+
+
+def _now():
+    return time.strftime("%Y-%m-%d %H:%M:%S")
+
+
+def _empty_record():
+    return {
+        "schema": 1,
+        "source": "eltdx（通达信）",
+        "updated_at": None,
+        "stock_count": 0,
+        "list_updated": None,
+        "day_count": 0, "week_count": 0, "month_count": 0,
+        "last_date": None, "lag_days": None,
+        "periods": {},
+        "current": None,
+        "history": [],
+    }
+
+
+def load_record():
+    """读取更新记录；文件不存在或损坏时返回空结构，不影响更新。"""
+    if not os.path.exists(UPDATE_RECORD):
+        return _empty_record()
+    try:
+        with open(UPDATE_RECORD, encoding="utf-8") as f:
+            data = json.load(f)
+        rec = _empty_record()
+        if isinstance(data, dict):
+            rec.update(data)
+        return rec
+    except Exception:
+        return _empty_record()
+
+
+def write_record(rec):
+    """原子写入，避免网页读到半截 JSON。"""
+    tmp = UPDATE_RECORD + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(rec, f, ensure_ascii=False, indent=2)
+    os.replace(tmp, UPDATE_RECORD)
+
+
+def _sample_last_date(folder):
+    """抽样读各文件首行日期，取最大值作为该周期的最后数据日期。"""
+    if not os.path.isdir(folder):
+        return None
+    names = [f for f in os.listdir(folder) if f.endswith(".json")]
+    if not names:
+        return None
+    best = None
+    step = max(1, len(names) // 20)
+    for name in names[::step][:20]:
+        try:
+            with open(os.path.join(folder, name), encoding="utf-8") as f:
+                obj = json.load(f)
+            rows = obj[2] if isinstance(obj, list) and len(obj) >= 3 else []
+            if rows and isinstance(rows[0], dict) and rows[0].get("date"):
+                d = str(rows[0]["date"])[:10]
+                if best is None or d > best:
+                    best = d
+        except Exception:
+            continue
+    return best
+
+
+def scan_snapshot(rec):
+    """扫描本地目录，刷新记录里的文件数、最后日期与滞后天数。"""
+    for period, ext in PERIODS.items():
+        folder = os.path.join(DATA_PATH, ext)
+        files = 0
+        if os.path.isdir(folder):
+            files = sum(1 for f in os.listdir(folder) if f.endswith(".json"))
+        rec["periods"].setdefault(period, {})
+        rec["periods"][period].update(
+            files=files, last_date=_sample_last_date(folder))
+        rec[period + "_count"] = files
+    rec["last_date"] = rec["periods"].get("day", {}).get("last_date")
+    if rec["last_date"]:
+        try:
+            rec["lag_days"] = (date.today() - date.fromisoformat(rec["last_date"])).days
+        except Exception:
+            rec["lag_days"] = None
+    return rec
+
 
 def ensure_dirs():
     for sub in ("day", "week", "month"):
@@ -199,6 +289,20 @@ def read_codes_from_csv():
     return rows
 
 
+def local_list_stat():
+    """本地股票列表的数量与修改时间（未重拉列表时用于更新记录）。"""
+    count, updated = 0, None
+    if os.path.exists(STOCK_LIST):
+        try:
+            with open(STOCK_LIST, encoding="utf-8") as f:
+                count = sum(1 for line in f.readlines()[1:] if line.strip())
+            updated = time.strftime(
+                "%Y-%m-%d %H:%M", time.localtime(os.path.getmtime(STOCK_LIST)))
+        except Exception:
+            pass
+    return count, updated
+
+
 def update_all(Kl=None, incremental=True, only_codes=None, do_list=False,
                count=DEFAULT_BARS, limit=None):
     """主入口：更新股票列表和数据。
@@ -206,6 +310,19 @@ def update_all(Kl=None, incremental=True, only_codes=None, do_list=False,
     Kl 参数仅为兼容 Klang.Kl.downloadall/updateall 调用，可忽略。
     """
     ensure_dirs()
+    kind = "day" if incremental else "all"
+    if do_list:
+        kind = "list"
+    rec = load_record()
+    task = {
+        "kind": kind, "label": KIND_LABELS.get(kind, kind),
+        "started": _now(), "finished": None, "result": "running",
+        "total": 0, "done": 0, "ok": 0, "failed": 0, "message": "准备中",
+    }
+    rec["current"] = task
+    rec["history"] = [dict(task)] + (rec.get("history") or [])[:MAX_HISTORY - 1]
+    write_record(rec)
+
     client = connect()
     try:
         if do_list or not os.path.exists(STOCK_LIST):
@@ -218,9 +335,14 @@ def update_all(Kl=None, incremental=True, only_codes=None, do_list=False,
                 sum(1 for r in rows if r[0].startswith("sh")),
                 sum(1 for r in rows if r[0].startswith("sz")),
             ))
+            rec["stock_count"] = len(rows)
+            rec["list_updated"] = _now()
+            write_record(rec)
         else:
             rows = read_codes_from_csv()
             print("[1/2] 使用本地股票列表：%d 只" % len(rows))
+            rec["stock_count"], rec["list_updated"] = local_list_stat()
+            write_record(rec)
 
         if only_codes:
             wanted = set(only_codes)
@@ -232,6 +354,8 @@ def update_all(Kl=None, incremental=True, only_codes=None, do_list=False,
         periods = ["day"] if incremental else ["day", "week", "month"]
         print("[2/2] 更新 %s（%s）..." % (
             len(rows), "增量日K" if incremental else "日/周/月全量"))
+        task.update(total=len(rows), message="更新中")
+        write_record(rec)
 
         ok_count = 0
         t0 = time.time()
@@ -239,14 +363,32 @@ def update_all(Kl=None, incremental=True, only_codes=None, do_list=False,
             if update_one(client, code, name, periods, count, verbose=(limit is not None)):
                 ok_count += 1
             if i % 100 == 0:
-                print("    已处理 %d/%d，耗时 %.1fs" % (i, len(rows), time.time() - t0))
+                msg = "已处理 %d/%d，耗时 %.1fs" % (i, len(rows), time.time() - t0)
+                print("    " + msg)
+                task.update(done=i, message=msg)
+                write_record(rec)
             time.sleep(SLEEP)
 
-        print("完成：%d/%d 成功，耗时 %.1fs" % (ok_count, len(rows), time.time() - t0))
+        elapsed = time.time() - t0
+        msg = "完成：%d/%d 成功，耗时 %.1fs" % (ok_count, len(rows), elapsed)
+        print(msg)
+        task.update(finished=_now(), done=len(rows), ok=ok_count,
+                    failed=len(rows) - ok_count, message=msg,
+                    result="success" if ok_count else "failed")
+        rec["history"][0] = dict(task)
+        rec["updated_at"] = _now()
+        scan_snapshot(rec)
+        write_record(rec)
         if Kl is not None:
             # 刷新内存中的股票列表
             from Klang.data_klang import init_stock_list
             Kl.stocklist = init_stock_list(Kl)
+    except Exception as exc:
+        task.update(finished=_now(), result="failed", message="异常：%s" % exc)
+        rec["history"][0] = dict(task)
+        rec["updated_at"] = _now()
+        write_record(rec)
+        raise
     finally:
         try:
             client.close()

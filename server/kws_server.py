@@ -133,6 +133,15 @@ def DISPLAY(value):
     message['user_id'] = user_id
     sio.emit("user_ret",message,namespace="/Kserver")
 
+def emit_scan(stock_code, name):
+    """每处理一只股票报一次，网页用来滚动代码和进度条。"""
+    if not user_id:
+        return
+    sio.emit("user_ret", {
+        "retcode": "SCAN", "name": name or "", "code": stock_code,
+        "value": "", "user_id": user_id,
+    }, namespace="/Kserver")
+
 def execute(data):
     global user_id 
     logger.info('执行分片 user=%s loop=%s 股票数=%d 公式=%s', data.get("user_id"),
@@ -151,17 +160,22 @@ def execute(data):
     user_id = data["user_id"]
     err_count = 0
     for stockcode in data ["stocklist"]:
+        sc = stockcode["code"]
         # 先加载该股票，跳过无本地数据的新股（列表里有代码但没 K 线文件）。
         # 否则公式里的 MA(C,N)[-1] 会对空序列抛 index out of bounds，污染网页错误提示。
         try:
-            code(stockcode["code"])
+            code(sc)
         except Exception as exc:
-            logger.warning('跳过无数据股票 code=%s: %s', stockcode["code"], exc)
+            logger.warning('跳过无数据股票 code=%s: %s', sc, exc)
+            emit_scan(sc, "")
             continue
+        name = Kl.cur_name or ""
         if Kl.day_df is None or len(Kl.day_df) == 0:
-            logger.warning('跳过无数据股票 code=%s（本地无 K 线）', stockcode["code"])
+            logger.warning('跳过无数据股票 code=%s（本地无 K 线）', sc)
+            emit_scan(sc, name)
             continue
 
+        emit_scan(sc, name)
         # 数据已加载，直接执行公式主体（不再重复注入 code()）
         try:
             Kexec(content)
@@ -170,7 +184,7 @@ def execute(data):
             err_count += 1
             logger.error('Kexec 失败 code=%s: %s', stockcode["code"], exc)
             if err_count <= 3:
-                message = {"retcode":"ERROR","name":"","code":stockcode["code"],\
+                message = {"retcode":"ERROR","name":"","code":sc,\
                     "value":str(exc),"user_id":user_id}
                 sio.emit("user_ret",message,namespace="/Kserver")
     # unlock

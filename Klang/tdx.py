@@ -38,6 +38,9 @@ def _MA(S,N):              #求序列的N日简单移动平均值，返回序列
 def _DIFF(S, N=1):         #前一个值减后一个值,前面会产生nan 
     return pd.Series(S).diff(N).values     #np.diff(S)直接删除nan，会少一行
 
+def _REF(S, N=1):          #N 周期前的值。RSI 用它，之前没有这个函数会直接报 NameError
+    return pd.Series(S).shift(N).values
+
 def _STD(S,N):             #求序列的N日标准差，返回序列    
     return  pd.Series(S).rolling(N).std(ddof=0).values     
 
@@ -174,20 +177,27 @@ def REFDATE(X,A):
 
 例如：　CROSS(MA(CLOSE，5)，MA(CLOSE，10))　表示5日均线与10日均线交金叉。
 """
-def _cross(a,b):
-    if a[-2] < b[-2] and a[-1] >= b[-1]:
-        return 1
-    return 0
+def _as_array(x):
+    data = x.data if isinstance(x, KdataBase) else x
+    return np.asarray(data, dtype=float)
 
 def CROSS(A,B):
-    result = []
-    for i in range(0,len(A)-1):
-        result.insert(0,_cross(A[-i].data,B[-i].data))
+    """A 上穿 B。最后一根为 1 表示刚刚金叉。
 
-    #补全最后一个
-    result.insert(0,0)
-    ret = KdataBase(data=result,dtype=bool)
-    return ret
+    旧实现用 A[-i]，而序列里 [-1] 和 [0] 都是「当前这根」，最新一根会被写两次。
+    这里按位置对齐后逐根判断。
+    """
+    a = _as_array(A)
+    b = _as_array(B)
+    n = min(len(a), len(b))
+    if n == 0:
+        return KdataBase(data=np.array([], dtype=bool), dtype=bool)
+    a = a[-n:]
+    b = b[-n:]
+    result = np.zeros(n, dtype=bool)
+    if n >= 2:
+        result[1:] = (a[:-1] < b[:-1]) & (a[1:] >= b[1:])
+    return KdataBase(data=result, dtype=bool)
 
 def BARSCOUNT(X):
     return len(X)
@@ -206,10 +216,15 @@ def BARSCOUNT(X):
 表示上次K线收阳到当前的周期数。
 """
 def BARSLAST(X):
-    for i in range(0,len(X)):
-        if X[i]:
-            break
-    return i
+    n = len(X)
+    for i in range(n):
+        try:
+            hit = X[i]
+        except StopIteration:
+            return n
+        if hit:
+            return i
+    return n
 #
 def BARSLASTFIND(X,val):
     for i in range(0,len(X)):
@@ -607,7 +622,7 @@ def FORCAST(X,N):
     :param n: 整数。周期。
     :return: 数组。线性回归预测值
     """
-    return 3 * WMA(X, n) - 2 * MA(X, n)
+    return 3 * WMA(X, N) - 2 * MA(X, N)
 
 def SLOPE(X,N):
     ret = KdataBase()
@@ -640,10 +655,10 @@ CODELIKE
 """
 
 def CODELIKE(str1):
-    # "sh." or "sz."
-    code = kl.cur_code[3:] # code 现在是纯数字 
-    l = len(str1)
-    if  code[:1] == str1:
+    # sh.600000 → 600000，按前缀匹配。旧写法只比了第一位，CODELIKE('600') 永远是 0。
+    code = (kl.cur_code or "").split(".")[-1]
+    s = str(str1)
+    if code.startswith(s):
         return 1
     return 0
 """
@@ -665,7 +680,7 @@ def INBLOCK(bkname):
         return 1
     if bkname in kl.stockdict[code]['tdxgn']:
         return 1
-    return 
+    return 0 
 
 """
 NAMELIKE
@@ -681,9 +696,9 @@ NAMELIKE
 """
 
 def NAMELIKE(name1):
-    name = kl.cur_name      
-    l = len(name1)
-    if  name[:1] == name1:
+    name = kl.cur_name or ""
+    s = str(name1)
+    if name.startswith(s):
         return 1
     return 0
 

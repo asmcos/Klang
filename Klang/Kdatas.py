@@ -15,6 +15,12 @@ def setstock(kl1):
     global kl
     kl = kl1
 
+def _at(data, index):
+    """按下标取值。pandas Series 用整数下标会按标签解释，必须走 iloc。"""
+    if isinstance(data, pandas.Series):
+        return data.iloc[index]
+    return data[index]
+
 """
 df2 = df[(df.date >= '2020-10-01') & 
              (df.date <= '2021-01-01')] 
@@ -59,13 +65,17 @@ class KdataBase(object):
     #返回最后一天的数据
     @property
     def value(self):
-        ret = self.data[-1]
+        if self.data is None or len(self.data) < 1:
+            return None
+        ret = _at(self.data, -1)
         if self.dtype == float:
-            return round(ret,3)
+            return round(float(ret), 3)
         return ret
 
     def __bool__(self):
-        return bool(self.data[-1])
+        if self.data is None or len(self.data) < 1:
+            return False
+        return bool(_at(self.data, -1))
 
     @property
     def data(self):
@@ -208,6 +218,9 @@ class KdataBase(object):
             return kb             
         else: #int float
             return self.value + other
+
+    def __radd__(self, other):
+        return self.__add__(other)
     # -
     def __sub__(self,other):
         if isinstance(other,KdataBase):  
@@ -223,17 +236,17 @@ class KdataBase(object):
             return self.value - other
     # -
     def __rsub__(self,other):
-        if isinstance(other,KdataBase):  
+        if isinstance(other,KdataBase):
             kb = KdataBase()
             d1,d2 = match_size(self.data,other.data)
             kb._data = d2 - d1
             return kb
-        if isinstance(other,float) or isinstance(other,int):
+        # 100 - C 要走这里。之前写成 self - other，左右减反了。
+        if isinstance(other,(float,int)) and not isinstance(other,bool):
             kb = KdataBase()
-            kb._data = self.data - other
-            return kb             
-        else: #int float
-            return other - self.value
+            kb._data = other - np.asarray(self.data)
+            return kb
+        return other - self.value
 
     # *
     def __mul__(self,other):
@@ -248,6 +261,9 @@ class KdataBase(object):
             return kb             
         else: #int float
             return round(self.value * other,3)
+
+    def __rmul__(self, other):
+        return self.__mul__(other)
 
     # / 
     def __truediv__(self, other):
@@ -265,18 +281,17 @@ class KdataBase(object):
             return round(self.value / other,3)
 
     def __rtruediv__(self, other):
-        #s1 , s2 = match_size(self.data,other.data)
-        if isinstance(other,KdataBase):  
+        if isinstance(other,KdataBase):
             kb = KdataBase()
             d1,d2 = match_size(self.data,other.data)
             kb._data = d2 / d1
             return kb
-        if isinstance(other,float) or isinstance(other,int):
+        # 100 / C 要走这里。之前写成 self / other，分子分母反了。
+        if isinstance(other,(float,int)) and not isinstance(other,bool):
             kb = KdataBase()
-            kb._data = self.data / other
-            return kb             
-        else:
-            return round(other / self.value,3)
+            kb._data = other / np.asarray(self.data, dtype=float)
+            return kb
+        return round(other / self.value,3)
 
 
     __div__ = __truediv__
@@ -302,7 +317,7 @@ class Kdatas(KdataBase):
     def value(self):
         if len(self.data) <1:
             return None
-        return self.dtype(self.data[-1])
+        return self.dtype(_at(self.data, -1))
 
     #比较code 值的目的是切换股票的时候刷新
     @property

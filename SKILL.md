@@ -8,10 +8,12 @@ agent_created: true
 
 > **本文件有两处相同副本**：仓库根目录 `SKILL.md`（方便直接查看/复制）与 `.workbuddy/skills/klang-quant/SKILL.md`（WorkBuddy 打开本仓库时会自动发现）。修改任一处请同步另一处。
 >
-> 安装到自己的 WorkBuddy：
+> 安装到自己的 WorkBuddy（主技能 + 两个子技能）：
 > ```bash
-> mkdir -p ~/.workbuddy/skills/klang-quant
+> mkdir -p ~/.workbuddy/skills/klang-quant ~/.workbuddy/skills/klang-formula ~/.workbuddy/skills/klang-spoken
 > cp SKILL.md ~/.workbuddy/skills/klang-quant/SKILL.md
+> cp .workbuddy/skills/klang-formula/SKILL.md ~/.workbuddy/skills/klang-formula/SKILL.md
+> cp .workbuddy/skills/klang-spoken/SKILL.md ~/.workbuddy/skills/klang-spoken/SKILL.md
 > ```
 
 ## 概述
@@ -30,6 +32,20 @@ Klang 仓库：<https://github.com/asmcos/Klang> ｜ 问答社区：<https://for
 - 要用 Klang 跑选股、算技术指标、批量回测某段行情
 - 用户问「今天涨停的股票有哪些」「哪些票放量突破」这类需要扫全市场的问题
 - 别人的 WorkBuddy 需要知道 Klang 怎么装、数据怎么下、公式怎么写
+
+## 口语选股（WorkBuddy 里用户随口问）
+
+用户不会写公式。先读子技能，再扫描，不要自己发明语法。
+
+1. **说法对上哪条公式**：读 [klang-spoken](.workbuddy/skills/klang-spoken/SKILL.md)，或直接跑
+   `python3 examples/spoken_scan.py --match "用户的原话"`。
+2. **涨停 / 跌停 / 炸板**走脚本，不走 9.8% 教学公式：
+   `python3 tools/limit_up.py`、`--down`、`--broken`。`spoken_scan.py --run` 会自动选脚本。
+3. **其余说法**走目录里的公式：`python3 examples/spoken_scan.py --run "均线多头"`。
+   调试加 `--limit 200`。对上之后把命中的代码、名称、数值回报给用户。
+4. **目录里没有这句**：读 [klang-formula](.workbuddy/skills/klang-formula/SKILL.md)，按硬约束写一条新公式，先 `--limit 200` 跑通再扫全市场。
+
+对照表只有一份：`server/spoken_catalog.json`。网页公式库和 `spoken_scan.py` 都读它。
 
 ## 核心前提：数据是本地缓存
 

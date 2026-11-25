@@ -39,11 +39,15 @@ def limit_pct(code, name):
     return [10.0]
 
 
-def match_limit(close, high, prev_close, limits):
-    """收盘价是否落在某个涨停价上（且当天最高价等于该价，即封住板）。"""
+def match_limit(close, extreme, prev_close, limits, direction=1):
+    """收盘是否封在涨停价或跌停价上。
+
+    direction=1 为涨停，极值用最高价；direction=-1 为跌停，极值用最低价。
+    旧写法两个方向都按涨停价计算，跌停永远对不上。
+    """
     for lim in limits:
-        price = round(prev_close * (1 + lim / 100), 2)
-        if abs(close - price) < 0.005 and abs(high - price) < 0.005:
+        price = round(prev_close * (1 + direction * lim / 100), 2)
+        if abs(close - price) < 0.005 and abs(extreme - price) < 0.005:
             return lim
     return None
 
@@ -80,7 +84,7 @@ def scan(target_date=None):
             lp = limit_pct(code, name)
             pct = (close - prev_close) / prev_close * 100
 
-            hit = match_limit(close, high, prev_close, lp)
+            hit = match_limit(close, high, prev_close, lp, 1)
             if hit is not None:
                 item = {
                     "code": code, "name": name, "pct": pct, "close": close,
@@ -91,7 +95,7 @@ def scan(target_date=None):
                 continue
 
             # 跌停
-            hit_dn = match_limit(close, low, prev_close, lp)
+            hit_dn = match_limit(close, low, prev_close, lp, -1)
             if hit_dn is not None:
                 down.append({
                     "code": code, "name": name, "pct": pct, "close": close,
